@@ -36,6 +36,8 @@ def export_gpx(client: httpx.Client, route: RouteParams, lang: str = "en") -> by
         ("export", "gpx"),
         ("lang", lang),
         ("rp_c", route.profile_code),
+        ("name", "export"),
+        ("title", "export"),
         *[("rg", chunk) for chunk in route.rg_chunks()],
         *[("rs", value) for value in route.rs],
         *[("ri", value) for value in route.ri],

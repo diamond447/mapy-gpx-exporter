@@ -29,10 +29,31 @@ def parse_route_from_location(location: str) -> RouteParams:
     pairs = parse_qsl(parsed.query, keep_blank_values=True)
 
     rc = next((v for k, v in pairs if k == "rc"), None)
-    if not rc:
+    dim = next((v for k, v in pairs if k == "dim"), None)
+    
+    if not rc and not dim:
         raise ShortLinkResolutionError(
-            f"Redirect target has no 'rc' route parameter: {location}"
+            f"Redirect target has no 'rc' or 'dim' route parameter: {location}"
         )
+        
+    if dim:
+        # Dim links are resolved later using an extra HTTP request,
+        # but we parse the profile_code from here if available
+        # (usually it isn't in dim links, but just in case)
+        profile_code = 132
+        mrp_raw = next((v for k, v in pairs if k == "mrp"), None)
+        if mrp_raw:
+            try:
+                profile_code = json.loads(mrp_raw).get("c", profile_code)
+            except (json.JSONDecodeError, AttributeError) as exc:
+                raise ShortLinkResolutionError(
+                    f"Could not parse 'mrp' JSON in redirect target: {mrp_raw!r}"
+                ) from exc
+        
+        # We temporarily return a RouteParams with the dim string in `rc` just to pass it back,
+        # but `resolve_short_link` will intercept this and resolve it via FRPC.
+        # This keeps `parse_route_from_location` pure.
+        return RouteParams(rc=dim, rwp="dim_marker", profile_code=profile_code)
 
     rs = [v for k, v in pairs if k == "rs"]
     ri = [v for k, v in pairs if k == "ri"]
@@ -69,6 +90,15 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
         ShortLinkResolutionError: If the link doesn't redirect as expected,
             or the redirect target is missing required route parameters.
     """
+    # If the user pasted a long link directly, it might already contain the parameters.
+    # Long links return 200 OK because they are the actual SPA HTML page.
+    if "dim=" in short_url or "rc=" in short_url:
+        params = parse_route_from_location(short_url)
+        if params.rwp == "dim_marker":
+            from .frpc_resolver import resolve_dim_link
+            return resolve_dim_link(client, short_url, dim_id=params.rc)
+        return params
+
     try:
         response = client.get(short_url, follow_redirects=False)
     except httpx.HTTPError as exc:
@@ -86,4 +116,10 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
             f"Redirect from {short_url} had no Location header."
         )
 
-    return parse_route_from_location(location)
+    params = parse_route_from_location(location)
+    
+    if params.rwp == "dim_marker":
+        from .frpc_resolver import resolve_dim_link
+        return resolve_dim_link(client, location, dim_id=params.rc)
+        
+    return params

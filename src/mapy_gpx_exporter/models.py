@@ -14,9 +14,13 @@ class RouteParams:
     execution required).
     """
 
-    rc: str
+    rc: str = ""
     """Concatenated per-waypoint geometry codes (Mapy.com's own encoding,
     not standard polyline)."""
+
+    rg: list[str] | None = None
+    """Pre-chunked geometry codes (used by dim link resolution). If provided,
+    this overrides the splitting of rc."""
 
     rs: list[str] = field(default_factory=list)
     """Per-waypoint source type, e.g. ``"regi"`` for a geocoded point."""
@@ -41,6 +45,12 @@ class RouteParams:
         ``rs``) as the point count, since both always have one entry per
         waypoint.
         """
+        if self.rg is not None:
+            return self.rg
+
+        if not self.rc:
+            return []
+
         num_points = len(self.ri) or len(self.rs) or 1
         if len(self.rc) % num_points != 0:
             raise ValueError(
