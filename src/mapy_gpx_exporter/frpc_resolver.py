@@ -24,7 +24,7 @@ def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteP
         ShortLinkResolutionError: If the FRPC request fails or geometry is missing.
     """
     try:
-        import pyfrpc
+        import pyfrpc  # type: ignore[import-untyped]
     except ImportError as e:
         raise ImportError(
             "Resolving saved routes (dim links) requires the pyfrpc library. "
@@ -58,11 +58,12 @@ def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteP
     except httpx.HTTPError as exc:
         raise ShortLinkResolutionError(f"Failed to fetch mapybox-ng FRPC: {exc}") from exc
         
+    import typing
     try:
         response_obj = pyfrpc.decode(response.content)
         data = getattr(response_obj, 'result', response_obj)
         
-        def _decode(obj):
+        def _decode(obj: typing.Any) -> typing.Any:
             if isinstance(obj, bytes): 
                 return obj.decode('utf-8', errors='replace')
             elif isinstance(obj, dict): 

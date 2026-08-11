@@ -17,7 +17,7 @@ ROUTE = RouteParams(
 
 
 @respx.mock
-def test_export_gpx_sends_referer_and_returns_content():
+def test_export_gpx_sends_referer_and_returns_content() -> None:
     route_call = respx.get("https://mapy.com/api/tplannerexport").mock(
         return_value=httpx.Response(
             200, content=SAMPLE_GPX, headers={"content-type": "application/xml"}
@@ -35,7 +35,7 @@ def test_export_gpx_sends_referer_and_returns_content():
 
 
 @respx.mock
-def test_export_gpx_raises_on_non_200():
+def test_export_gpx_raises_on_non_200() -> None:
     respx.get("https://mapy.com/api/tplannerexport").mock(return_value=httpx.Response(404))
 
     with httpx.Client() as client:
@@ -44,7 +44,7 @@ def test_export_gpx_raises_on_non_200():
 
 
 @respx.mock
-def test_export_gpx_raises_on_unexpected_content_type():
+def test_export_gpx_raises_on_unexpected_content_type() -> None:
     respx.get("https://mapy.com/api/tplannerexport").mock(
         return_value=httpx.Response(
             200, content=b"<html>not gpx</html>", headers={"content-type": "text/html"}

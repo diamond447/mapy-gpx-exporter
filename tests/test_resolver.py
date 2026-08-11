@@ -19,7 +19,7 @@ REAL_LOCATION = (
 )
 
 
-def test_parse_route_from_location_extracts_all_fields():
+def test_parse_route_from_location_extracts_all_fields() -> None:
     route = parse_route_from_location(REAL_LOCATION)
 
     assert route.rc == "9mR.HxU17l9mw.Hx8m7L"
@@ -29,20 +29,20 @@ def test_parse_route_from_location_extracts_all_fields():
     assert route.rwp is not None
 
 
-def test_rg_chunks_splits_evenly_by_waypoint_count():
+def test_rg_chunks_splits_evenly_by_waypoint_count() -> None:
     route = parse_route_from_location(REAL_LOCATION)
     chunks = route.rg_chunks()
 
     assert chunks == ["9mR.HxU17l", "9mw.Hx8m7L"]
 
 
-def test_parse_route_from_location_missing_rc_raises():
+def test_parse_route_from_location_missing_rc_raises() -> None:
     with pytest.raises(ShortLinkResolutionError):
         parse_route_from_location("https://mapy.com/en/turisticka?planovani-trasy")
 
 
 @respx.mock
-def test_resolve_short_link_follows_single_redirect():
+def test_resolve_short_link_follows_single_redirect() -> None:
     respx.get("https://mapy.com/s/mukekodezu").mock(
         return_value=httpx.Response(301, headers={"location": REAL_LOCATION})
     )
@@ -54,7 +54,7 @@ def test_resolve_short_link_follows_single_redirect():
 
 
 @respx.mock
-def test_resolve_short_link_raises_on_non_redirect():
+def test_resolve_short_link_raises_on_non_redirect() -> None:
     respx.get("https://mapy.com/s/expired").mock(return_value=httpx.Response(404))
 
     with httpx.Client() as client:

@@ -28,7 +28,7 @@ def parse_route_from_location(location: str) -> RouteParams:
     parsed = urlparse(location)
     pairs = parse_qsl(parsed.query, keep_blank_values=True)
 
-    rc = next((v for k, v in pairs if k == "rc"), None)
+    rc = next((v for k, v in pairs if k == "rc"), "")
     dim = next((v for k, v in pairs if k == "dim"), None)
     
     if not rc and not dim:
