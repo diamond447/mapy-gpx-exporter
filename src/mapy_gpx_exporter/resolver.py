@@ -30,12 +30,12 @@ def parse_route_from_location(location: str) -> RouteParams:
 
     rc = next((v for k, v in pairs if k == "rc"), "")
     dim = next((v for k, v in pairs if k == "dim"), None)
-    
+
     if not rc and not dim:
         raise ShortLinkResolutionError(
             f"Redirect target has no 'rc' or 'dim' route parameter: {location}"
         )
-        
+
     if dim:
         # Dim links are resolved later using an extra HTTP request,
         # but we parse the profile_code from here if available
@@ -49,7 +49,7 @@ def parse_route_from_location(location: str) -> RouteParams:
                 raise ShortLinkResolutionError(
                     f"Could not parse 'mrp' JSON in redirect target: {mrp_raw!r}"
                 ) from exc
-        
+
         # We temporarily return a RouteParams with the dim string in `rc` just to pass it back,
         # but `resolve_short_link` will intercept this and resolve it via FRPC.
         # This keeps `parse_route_from_location` pure.
@@ -96,6 +96,7 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
         params = parse_route_from_location(short_url)
         if params.rwp == "dim_marker":
             from .frpc_resolver import resolve_dim_link
+
             return resolve_dim_link(client, short_url, dim_id=params.rc)
         return params
 
@@ -112,14 +113,13 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
 
     location = response.headers.get("location")
     if not location:
-        raise ShortLinkResolutionError(
-            f"Redirect from {short_url} had no Location header."
-        )
+        raise ShortLinkResolutionError(f"Redirect from {short_url} had no Location header.")
 
     params = parse_route_from_location(location)
-    
+
     if params.rwp == "dim_marker":
         from .frpc_resolver import resolve_dim_link
+
         return resolve_dim_link(client, location, dim_id=params.rc)
-        
+
     return params

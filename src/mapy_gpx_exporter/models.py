@@ -59,6 +59,4 @@ class RouteParams:
                 f"encoding scheme."
             )
         chunk_size = len(self.rc) // num_points
-        return [
-            self.rc[i : i + chunk_size] for i in range(0, len(self.rc), chunk_size)
-        ]
+        return [self.rc[i : i + chunk_size] for i in range(0, len(self.rc), chunk_size)]

@@ -13,10 +13,7 @@ from .models import RouteParams
 from .resolver import parse_route_from_location, resolve_short_link
 
 _DEFAULT_HEADERS = {
-    "User-Agent": (
-        "mapy-gpx-exporter/0.1 "
-        "(+https://github.com/diamond447/mapy-gpx-exporter)"
-    ),
+    "User-Agent": ("mapy-gpx-exporter/0.1 (+https://github.com/diamond447/mapy-gpx-exporter)"),
 }
 
 
@@ -51,8 +48,7 @@ class AsyncMapyGpxClient:
     """Async client, useful for batch-exporting many links concurrently."""
 
     def __init__(self, timeout: float = 10.0, max_concurrent: int = 5) -> None:
-        self._client = httpx.AsyncClient(
-            headers=_DEFAULT_HEADERS, timeout=timeout)
+        self._client = httpx.AsyncClient(headers=_DEFAULT_HEADERS, timeout=timeout)
         self._semaphore = asyncio.Semaphore(max_concurrent)
 
     async def __aenter__(self) -> AsyncMapyGpxClient:
@@ -72,8 +68,7 @@ class AsyncMapyGpxClient:
             )
         location = response.headers.get("location")
         if not location:
-            raise ShortLinkResolutionError(
-                f"No Location header for {short_url}")
+            raise ShortLinkResolutionError(f"No Location header for {short_url}")
         return parse_route_from_location(location)
 
     async def fetch_gpx(self, short_url: str, lang: str = "en") -> bytes:
@@ -87,18 +82,12 @@ class AsyncMapyGpxClient:
                 *[("rs", value) for value in route.rs],
                 *[("ri", value) for value in route.ri],
             ]
-            response = await self._client.get(
-                _EXPORT_URL, params=params, headers=_REQUIRED_HEADERS
-            )
+            response = await self._client.get(_EXPORT_URL, params=params, headers=_REQUIRED_HEADERS)
             if response.status_code != 200:
-                raise GpxExportError(
-                    f"Export failed for {short_url}: HTTP {response.status_code}"
-                )
+                raise GpxExportError(f"Export failed for {short_url}: HTTP {response.status_code}")
             return response.content
 
-    async def fetch_many(
-        self, short_urls: list[str]
-    ) -> list[tuple[str, bytes | Exception]]:
+    async def fetch_many(self, short_urls: list[str]) -> list[tuple[str, bytes | Exception]]:
         """Fetch GPX for many links concurrently (bounded by max_concurrent).
 
         Returns a list of (url, result) pairs where result is either the
