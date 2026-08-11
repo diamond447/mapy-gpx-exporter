@@ -578,6 +578,7 @@ dependencies = [
 dev = [
     { name = "mypy" },
     { name = "pre-commit" },
+    { name = "pyfrpc" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "respx" },
@@ -592,6 +593,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7" },
+    { name = "pyfrpc", marker = "extra == 'dev'", specifier = ">=0.2.14" },
     { name = "pyfrpc", marker = "extra == 'frpc'", specifier = ">=0.2.14" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
