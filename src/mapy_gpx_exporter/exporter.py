@@ -118,3 +118,32 @@ def export_gpx(client: httpx.Client, route: RouteParams, lang: str = "en") -> by
         )
 
     return response.content
+
+
+async def async_export_gpx(
+    client: httpx.AsyncClient, route: RouteParams, lang: str = "en"
+) -> bytes:
+    """Async equivalent of export_gpx — same validation logic, async client."""
+    if route.resolution_method == "local_decode":
+        return build_local_gpx(route)
+
+    params = build_export_params(route, lang=lang)
+
+    try:
+        response = await client.get(_EXPORT_URL, params=params, headers=_REQUIRED_HEADERS)
+    except httpx.HTTPError as exc:
+        raise GpxExportError(f"Request to {_EXPORT_URL} failed: {exc}") from exc
+
+    if response.status_code != 200:
+        raise GpxExportError(
+            f"Export failed with HTTP {response.status_code}: {response.text[:200]!r}"
+        )
+
+    content_type = response.headers.get("content-type", "")
+    if "xml" not in content_type and not response.content.lstrip().startswith(b"<?xml"):
+        raise GpxExportError(
+            f"Unexpected response content-type {content_type!r}; "
+            "Mapy.com may have changed the export endpoint."
+        )
+
+    return response.content

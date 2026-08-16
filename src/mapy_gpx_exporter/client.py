@@ -7,12 +7,9 @@ from pathlib import Path
 
 import httpx
 
-from .exceptions import GpxExportError, ShortLinkResolutionError
+from .exceptions import ShortLinkResolutionError
 from .exporter import (
-    _EXPORT_URL,
-    _REQUIRED_HEADERS,
-    build_export_params,
-    build_local_gpx,
+    async_export_gpx,
     export_gpx,
 )
 from .models import RouteParams
@@ -83,22 +80,10 @@ class AsyncMapyGpxClient:
         return params
 
     async def fetch_gpx(self, short_url: str, lang: str = "en") -> bytes:
+        """Resolve a share link and download its GPX in one call."""
         async with self._semaphore:
             route = await self._resolve(short_url)
-
-            # dim links are resolved locally — generate GPX from decoded points
-            if route.resolution_method == "local_decode":
-                return build_local_gpx(route)
-
-            params = build_export_params(route, lang=lang)
-            response = await self._client.get(
-                _EXPORT_URL,
-                params=params,
-                headers=_REQUIRED_HEADERS,
-            )
-            if response.status_code != 200:
-                raise GpxExportError(f"Export failed for {short_url}: HTTP {response.status_code}")
-            return response.content
+            return await async_export_gpx(self._client, route, lang=lang)
 
     async def fetch_many(self, short_urls: list[str]) -> list[tuple[str, bytes | Exception]]:
         """Fetch GPX for many links concurrently (bounded by max_concurrent).
