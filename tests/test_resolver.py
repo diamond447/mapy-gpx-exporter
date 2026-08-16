@@ -27,12 +27,16 @@ def test_parse_route_from_location_extracts_all_fields() -> None:
     assert route.rs == ["regi", "regi"]
     assert route.ri == ["14", "14"]
     assert route.profile_code == 132
-    assert route.rwp is not None
+    assert route.dim_id is None
 
 
 def test_rg_chunks_splits_evenly_by_waypoint_count() -> None:
     route = parse_route_from_location(REAL_LOCATION)
-    chunks = route.rg_chunks()
+    
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        chunks = route.rg_chunks()
 
     assert chunks == ["9mR.HxU17l", "9mw.Hx8m7L"]
 

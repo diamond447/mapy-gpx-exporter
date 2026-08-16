@@ -42,9 +42,9 @@ class RouteParams:
     """Routing profile id (``mrp.c`` in the URL), e.g. 132 = recommended
     cycling route. Determines which activity profile the export uses."""
 
-    rwp: str | None = None
-    """Full detailed route-point encoding. Not required for GPX export,
-    kept only for debugging/inspection."""
+    dim_id: str | None = None
+    """Document ID for 'dim' (saved route) links. If present, the route
+    must be resolved via FRPC."""
 
     def rg_chunks(self) -> list[str]:
         """Split ``rc`` back into one absolute geometry code per waypoint.

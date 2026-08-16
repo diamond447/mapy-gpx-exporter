@@ -50,14 +50,12 @@ def parse_route_from_location(location: str) -> RouteParams:
                     f"Could not parse 'mrp' JSON in redirect target: {mrp_raw!r}"
                 ) from exc
 
-        # We temporarily return a RouteParams with the dim string in `rc` just to pass it back,
-        # but `resolve_short_link` will intercept this and resolve it via FRPC.
+        # We return a RouteParams with dim_id set.
         # This keeps `parse_route_from_location` pure.
-        return RouteParams(rc=dim, rwp="dim_marker", profile_code=profile_code)
+        return RouteParams(dim_id=dim, profile_code=profile_code)
 
     rs = [v for k, v in pairs if k == "rs"]
     ri = [v for k, v in pairs if k == "ri"]
-    rwp = next((v for k, v in pairs if k == "rwp"), None)
 
     profile_code = 132
     mrp_raw = next((v for k, v in pairs if k == "mrp"), None)
@@ -69,7 +67,7 @@ def parse_route_from_location(location: str) -> RouteParams:
                 f"Could not parse 'mrp' JSON in redirect target: {mrp_raw!r}"
             ) from exc
 
-    return RouteParams(rc=rc, rs=rs, ri=ri, profile_code=profile_code, rwp=rwp)
+    return RouteParams(rc=rc, rs=rs, ri=ri, profile_code=profile_code)
 
 
 def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
@@ -94,10 +92,10 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
     # Long links return 200 OK because they are the actual SPA HTML page.
     if "dim=" in short_url or "rc=" in short_url:
         params = parse_route_from_location(short_url)
-        if params.rwp == "dim_marker":
+        if params.dim_id:
             from .frpc_resolver import resolve_dim_link
 
-            return resolve_dim_link(client, short_url, dim_id=params.rc)
+            return resolve_dim_link(client, short_url, dim_id=params.dim_id)
         return params
 
     try:
@@ -124,9 +122,9 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
 
     params = parse_route_from_location(location)
 
-    if params.rwp == "dim_marker":
+    if params.dim_id:
         from .frpc_resolver import resolve_dim_link
 
-        return resolve_dim_link(client, location, dim_id=params.rc)
+        return resolve_dim_link(client, location, dim_id=params.dim_id)
 
     return params

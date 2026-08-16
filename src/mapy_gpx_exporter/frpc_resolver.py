@@ -9,28 +9,9 @@ from .exceptions import ShortLinkResolutionError
 from .models import RouteParams
 
 
-def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteParams:
-    """Resolve a mapy.com 'dim' link (saved document) into RouteParams.
-
-    Mapy.com saved routes store their geometry on the server and use FastRPC
-    to hydrate them in the browser. We use pyfrpc to simulate this request.
-
-    Args:
-        client: An httpx.Client for pooling.
-        location: The full mapy.com URL containing the dim parameter.
-        dim_id: The document ID (e.g. 69039f733c8bfe32fe7ecc52).
-
-    Raises:
-        ImportError: If pyfrpc is not installed.
-        ShortLinkResolutionError: If the FRPC request fails or geometry is missing.
-    """
-    try:
-        import pyfrpc  # type: ignore[import-untyped]
-    except ImportError as e:
-        raise ImportError(
-            "Resolving saved routes (dim links) requires the pyfrpc library. "
-            "Please install the package with the frpc extra: pip install mapy-gpx-exporter[frpc]"
-        ) from e
+def _prepare_dim_request(location: str, dim_id: str) -> tuple[str, dict[str, str], bytes]:
+    if len(dim_id) != 24:
+        raise ShortLinkResolutionError(f"dim_id must be exactly 24 characters, got {len(dim_id)}")
 
     url = "https://mapy.com/api/mapybox-ng/"
     headers = {
@@ -43,26 +24,28 @@ def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteP
         "Origin": "https://mapy.com",
     }
 
-    if len(dim_id) != 24:
-        raise ShortLinkResolutionError(f"dim_id must be exactly 24 characters, got {len(dim_id)}")
-
     # Since dim_id is exactly 24 chars, \x18 is the correct length prefix for a string in FRPC
     payload = (
         b"\xca\x11\x02\x01h\x0blike.detail \x18"
         + dim_id.encode("utf-8")
         + b"P\x01\x04langX\x01 \x02en"
     )
+    
+    return url, headers, payload
 
-    try:
-        response = client.post(url, headers=headers, content=payload)
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise ShortLinkResolutionError(f"Failed to fetch mapybox-ng FRPC: {exc}") from exc
 
+def _parse_dim_response(content: bytes, dim_id: str) -> RouteParams:
     import typing
+    try:
+        import pyfrpc  # type: ignore[import-untyped]
+    except ImportError as e:
+        raise ImportError(
+            "Resolving saved routes (dim links) requires the pyfrpc library. "
+            "Please install the package with the frpc extra: pip install mapy-gpx-exporter[frpc]"
+        ) from e
 
     try:
-        response_obj = pyfrpc.decode(response.content)
+        response_obj = pyfrpc.decode(content)
         data = getattr(response_obj, "result", response_obj)
 
         def _decode(obj: typing.Any) -> typing.Any:
@@ -195,3 +178,46 @@ def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteP
         geometry_points=interpolated_points,
         profile_code=132,  # default to cycling, GPX exporter handles it
     )
+
+
+def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteParams:
+    """Resolve a mapy.com 'dim' link (saved document) into RouteParams.
+
+    Mapy.com saved routes store their geometry on the server and use FastRPC
+    to hydrate them in the browser. We use pyfrpc to simulate this request.
+
+    Args:
+        client: An httpx.Client for pooling.
+        location: The full mapy.com URL containing the dim parameter.
+        dim_id: The document ID (e.g. 69039f733c8bfe32fe7ecc52).
+
+    Raises:
+        ImportError: If pyfrpc is not installed.
+        ShortLinkResolutionError: If the FRPC request fails or geometry is missing.
+    """
+    url, headers, payload = _prepare_dim_request(location, dim_id)
+
+    try:
+        response = client.post(url, headers=headers, content=payload)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise ShortLinkResolutionError(f"Failed to fetch mapybox-ng FRPC: {exc}") from exc
+
+    return _parse_dim_response(response.content, dim_id)
+
+
+async def async_resolve_dim_link(
+    client: httpx.AsyncClient, 
+    location: str, 
+    dim_id: str
+) -> RouteParams:
+    """Resolve a mapy.com 'dim' link asynchronously."""
+    url, headers, payload = _prepare_dim_request(location, dim_id)
+
+    try:
+        response = await client.post(url, headers=headers, content=payload)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise ShortLinkResolutionError(f"Failed to fetch mapybox-ng FRPC: {exc}") from exc
+
+    return _parse_dim_response(response.content, dim_id)

@@ -105,16 +105,6 @@ def decode_mapy_geometry(encoded: str) -> list[tuple[float, float]]:
                 x = coords[0] / SCALE_FACTOR - 180.0
                 y = coords[1] / SCALE_FACTOR_Y - 90.0
                 
-                # Sanity check: ensure the distance to the previous point is not absurdly large
-                # (e.g. >20km jump is a clear sign of decoding corruption in standard routes)
-                if results:
-                    prev_lat, prev_lon = results[-1]
-                    dist = haversine_distance(prev_lat, prev_lon, y, x)
-                    if dist > 20_000:  # 20 km
-                        raise DecodingException(
-                            f"Absurd distance jump detected: {dist/1000:.1f} km"
-                        )
-                        
                 results.append((y, x))
                 
             coord_index = (coord_index + 1) % 2

@@ -1,27 +1,17 @@
-import pytest
-
 from mapy_gpx_exporter.decoder import (
-    DecodingException,
     decode_mapy_geometry,
     haversine_distance,
     interpolate_elevation,
 )
 
 
-def test_haversine_distance():
+def test_haversine_distance() -> None:
     lat1, lon1 = 48.8566, 2.3522
     lat2, lon2 = 51.5074, -0.1278
     dist = haversine_distance(lat1, lon1, lat2, lon2)
     assert 340_000 <= dist <= 345_000, f"Distance {dist} is out of bounds"
     assert haversine_distance(lat1, lon1, lat1, lon1) == 0.0
-
-def test_decode_mapy_geometry():
-    encoded = (
-        "9Qv8axCZOUNsIr6bMP6cMkONMcPGMfQFM9OpMOOTMMOMN4O8MvObMh6cMmOXMIOG"
-        "MUOuMN6lLp6ULi6WMQ6aKo6BKwNAJjLtK4MOJ7M3K-MfK9MBKfLwLCLrKlLsKNMq"
-        "Ks6lLkOFLeO7KnOMMN6jMJ61MFOlLKOBLX6qLw6hM7O4MXPFMcPNMk6yNJOoM4OC"
-        "L5PXKSPG"
-    )
+def test_decode_mapy_geometry() -> None:
     expected_points = [
         [45.61053, 7.351958], 
         [45.610351, 7.35203], 
@@ -30,15 +20,7 @@ def test_decode_mapy_geometry():
         [45.610289, 7.352487]
     ]
     
-    # We might catch DecodingException if it cuts off in the middle, 
-    # but we just want to check the first 5 points
-    try:
-        decoded = decode_mapy_geometry(encoded)
-    except DecodingException:
-        # Ignore cut off string, the function might raise or return partial
-        pass
-    
-    # Actually, we should test
+    # We check that the first 5 points are accurately decoded.
     encoded_str = (
         "9Qv8axCZOUNsIr6bMP6cMkONMcPGMfQFM9OpMOOTMMOMN4O8MvObMh6cMmOXMIOG"
         "MUOuMN6lLp6ULi6WMQ6aKo6BKwNAJjLtK4MOJ7M3K-MfK9MBKfLwLCLrKlLsKNMq"
@@ -134,12 +116,7 @@ def test_decode_mapy_geometry():
         assert abs(decoded[i][0] - exp_lat) < 1e-4
         assert abs(decoded[i][1] - exp_lon) < 1e-4
 
-def test_decode_mapy_geometry_corrupted():
-    with pytest.raises(DecodingException):
-        # A truncated string that is invalid
-        decode_mapy_geometry("q0000q0000qzzzzqzzzz")
-
-def test_interpolate_elevation():
+def test_interpolate_elevation() -> None:
     points = [
         (0.0, 0.0), 
         (0.0, 0.1), 

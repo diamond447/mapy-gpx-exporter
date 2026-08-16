@@ -69,7 +69,11 @@ class AsyncMapyGpxClient:
         location = response.headers.get("location")
         if not location:
             raise ShortLinkResolutionError(f"No Location header for {short_url}")
-        return parse_route_from_location(location)
+        params = parse_route_from_location(location)
+        if params.dim_id:
+            from .frpc_resolver import async_resolve_dim_link
+            return await async_resolve_dim_link(self._client, location, params.dim_id)
+        return params
 
     async def fetch_gpx(self, short_url: str, lang: str = "en") -> bytes:
         async with self._semaphore:
