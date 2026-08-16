@@ -118,7 +118,9 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
             raise ShortLinkResolutionError(f"Request to {location} failed: {exc}") from exc
 
     if not location:
-        raise ShortLinkResolutionError(f"Redirect from {short_url} had no Location header with route parameters.")
+        raise ShortLinkResolutionError(
+            f"Redirect from {short_url} had no Location header with route parameters."
+        )
 
     params = parse_route_from_location(location)
 

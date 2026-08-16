@@ -78,7 +78,6 @@ def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteP
             return obj
 
         decoded_data = _decode(data)
-        import json
             
         if isinstance(decoded_data, list) and len(decoded_data) > 0:
             data = decoded_data[0]
@@ -120,7 +119,12 @@ def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteP
             if isinstance(cand, str) and len(cand) > 100:
                 route_str = cand
                 break
-            elif isinstance(cand, list) and len(cand) > 0 and isinstance(cand[0], dict) and "geometry" in cand[0]:
+            elif (
+                isinstance(cand, list) 
+                and len(cand) > 0 
+                and isinstance(cand[0], dict) 
+                and "geometry" in cand[0]
+            ):
                 route_list = cand
                 break
 
@@ -166,7 +170,9 @@ def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteP
         total_length = length_candidates[0] if length_candidates else None
 
         if not geometry_points:
-            raise ShortLinkResolutionError("Unknown route data structure: missing both explicit geometry and route nodes.")
+            raise ShortLinkResolutionError(
+                "Unknown route data structure: missing both explicit geometry and route nodes."
+            )
 
         # Interpolate elevation and apply drift sanity check
         interpolated_points: list[tuple[float, float, float]] = []
@@ -174,7 +180,9 @@ def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteP
             interpolated_points = interpolate_elevation(geometry_points, szn_altitude, total_length)
 
     except Exception as exc:
-        raise ShortLinkResolutionError(f"Failed to extract route geometry from FRPC: {exc}") from exc
+        raise ShortLinkResolutionError(
+            f"Failed to extract route geometry from FRPC: {exc}"
+        ) from exc
 
     if not interpolated_points:
         raise ShortLinkResolutionError(

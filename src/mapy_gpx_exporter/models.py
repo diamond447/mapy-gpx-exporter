@@ -67,7 +67,10 @@ class RouteParams:
             return encode_mapy_geometry(pts)
         except Exception as exc:
             import warnings
-            warnings.warn(f"decode/encode round-trip failed, falling back to naive split: {exc}", stacklevel=2)
+            warnings.warn(
+                f"decode/encode round-trip failed, falling back to naive split: {exc}", 
+                stacklevel=2
+            )
             # Fallback to naive splitting if decoding fails for some reason
             num_points = len(self.ri) or len(self.rs) or 1
             chunk_size = len(self.rc) // num_points

@@ -111,7 +111,9 @@ def decode_mapy_geometry(encoded: str) -> list[tuple[float, float]]:
                     prev_lat, prev_lon = results[-1]
                     dist = haversine_distance(prev_lat, prev_lon, y, x)
                     if dist > 20_000:  # 20 km
-                        raise DecodingException(f"Absurd distance jump detected: {dist/1000:.1f} km")
+                        raise DecodingException(
+                            f"Absurd distance jump detected: {dist/1000:.1f} km"
+                        )
                         
                 results.append((y, x))
                 
@@ -147,7 +149,10 @@ def interpolate_elevation(
             haversine_distance(points[i][0], points[i][1], points[i+1][0], points[i+1][1])
             for i in range(len(points) - 1)
         )
-        if total_length > 0 and abs(computed_length - total_length) / total_length > 0.02:  # 2% tolerance
+        if (
+            total_length > 0 
+            and abs(computed_length - total_length) / total_length > 0.02
+        ):  # 2% tolerance
             raise DecodingException(
                 f"Cumulative drift detected: computed length {computed_length:.1f}m differs "
                 f"by >2% from FRPC totalLength {total_length:.1f}m."
