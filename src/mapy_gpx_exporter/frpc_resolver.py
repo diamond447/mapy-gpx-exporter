@@ -75,7 +75,9 @@ def _parse_dim_response(content: bytes, dim_id: str) -> RouteParams:
             data = decoded_data[0]
         else:
             data = decoded_data
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - FRPC payload is untyped/undocumented;
+        # any parsing failure (KeyError, TypeError, IndexError, ...) should surface
+        # as a domain error, not leak internal exception types to callers.
         raise ShortLinkResolutionError(f"Failed to decode Mapy.cz FRPC response: {exc}") from exc
 
     try:
@@ -172,7 +174,9 @@ def _parse_dim_response(content: bytes, dim_id: str) -> RouteParams:
         if geometry_points:
             interpolated_points = interpolate_elevation(geometry_points, szn_altitude, total_length)
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - FRPC payload is untyped/undocumented;
+        # any parsing failure (KeyError, TypeError, IndexError, ...) should surface
+        # as a domain error, not leak internal exception types to callers.
         raise ShortLinkResolutionError(
             f"Failed to extract route geometry from FRPC: {exc}"
         ) from exc

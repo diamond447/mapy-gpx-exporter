@@ -68,6 +68,22 @@ def test_resolve_short_link_raises_on_non_redirect() -> None:
             resolve_short_link(client, "https://mapy.com/s/expired")
 
 
+@respx.mock
+def test_resolve_short_link_raises_on_bad_status_mid_chain() -> None:
+    respx.get("https://mapy.com/s/two-hop").mock(
+        return_value=httpx.Response(301, headers={"location": "https://mapy.com/s/hop2"})
+    )
+    # druhý hop vrátí 500 s náhodně přítomnou Location hlavičkou
+    respx.get("https://mapy.com/s/hop2").mock(
+        return_value=httpx.Response(
+            500, headers={"location": "https://mapy.com/en/turisticka?rc=x"}
+        )
+    )
+    with httpx.Client() as client:
+        with pytest.raises(ShortLinkResolutionError):
+            resolve_short_link(client, "https://mapy.com/s/two-hop")
+
+
 def test_rg_chunks_handles_mixed_absolute_and_delta_encoding() -> None:
     # "hemorusagu" link: first point is absolute (10 chars), second is relative (8 chars)
     # The total rc length is 18, which would naively split into 9 and 9 and break the API.

@@ -112,12 +112,10 @@ def decode_mapy_geometry(encoded: str) -> list[tuple[float, float]]:
 
             coord_index = (coord_index + 1) % 2
 
+    except DecodingException:
+        raise  # already a well-formed decoding error, propagate as-is
     except Exception as e:
-        if isinstance(e, EOFError):
-            return results
-        if not isinstance(e, DecodingException):
-            raise DecodingException(f"Failed to decode Mapy.cz geometry: {e}") from e
-        raise
+        raise DecodingException(f"Failed to decode Mapy.cz geometry: {e}") from e
 
     return results
 

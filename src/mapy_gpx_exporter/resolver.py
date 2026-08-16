@@ -19,6 +19,20 @@ from .models import RouteParams
 _REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 
 
+def _parse_profile_code(pairs: list[tuple[str, str]]) -> int:
+    """Extract the routing profile code from the 'mrp' query parameter, if present."""
+    profile_code = 132
+    mrp_raw = next((v for k, v in pairs if k == "mrp"), None)
+    if mrp_raw:
+        try:
+            profile_code = json.loads(mrp_raw).get("c", profile_code)
+        except (json.JSONDecodeError, AttributeError) as exc:
+            raise ShortLinkResolutionError(
+                f"Could not parse 'mrp' JSON in redirect target: {mrp_raw!r}"
+            ) from exc
+    return profile_code
+
+
 def parse_route_from_location(location: str) -> RouteParams:
     """Parse a Mapy.com planner URL (the redirect target) into RouteParams.
 
@@ -37,37 +51,14 @@ def parse_route_from_location(location: str) -> RouteParams:
         )
 
     if dim:
-        # Dim links are resolved later using an extra HTTP request,
-        # but we parse the profile_code from here if available
-        # (usually it isn't in dim links, but just in case)
-        profile_code = 132
-        mrp_raw = next((v for k, v in pairs if k == "mrp"), None)
-        if mrp_raw:
-            try:
-                profile_code = json.loads(mrp_raw).get("c", profile_code)
-            except (json.JSONDecodeError, AttributeError) as exc:
-                raise ShortLinkResolutionError(
-                    f"Could not parse 'mrp' JSON in redirect target: {mrp_raw!r}"
-                ) from exc
-
         # We return a RouteParams with dim_id set.
         # This keeps `parse_route_from_location` pure.
-        return RouteParams(dim_id=dim, profile_code=profile_code)
+        return RouteParams(dim_id=dim, profile_code=_parse_profile_code(pairs))
 
     rs = [v for k, v in pairs if k == "rs"]
     ri = [v for k, v in pairs if k == "ri"]
 
-    profile_code = 132
-    mrp_raw = next((v for k, v in pairs if k == "mrp"), None)
-    if mrp_raw:
-        try:
-            profile_code = json.loads(mrp_raw).get("c", profile_code)
-        except (json.JSONDecodeError, AttributeError) as exc:
-            raise ShortLinkResolutionError(
-                f"Could not parse 'mrp' JSON in redirect target: {mrp_raw!r}"
-            ) from exc
-
-    return RouteParams(rc=rc, rs=rs, ri=ri, profile_code=profile_code)
+    return RouteParams(rc=rc, rs=rs, ri=ri, profile_code=_parse_profile_code(pairs))
 
 
 def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
@@ -115,10 +106,17 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
     while location and ("rc=" not in location and "dim=" not in location) and redirects < 5:
         try:
             response = client.get(location, follow_redirects=False)
-            location = response.headers.get("location")
-            redirects += 1
         except httpx.HTTPError as exc:
             raise ShortLinkResolutionError(f"Request to {location} failed: {exc}") from exc
+
+        if response.status_code not in _REDIRECT_STATUS_CODES:
+            raise ShortLinkResolutionError(
+                f"Expected a redirect while following {location}, "
+                f"got HTTP {response.status_code}"
+            )
+
+        location = response.headers.get("location")
+        redirects += 1
 
     if not location:
         raise ShortLinkResolutionError(
