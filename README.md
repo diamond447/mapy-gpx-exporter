@@ -14,15 +14,10 @@ and wraps them in a clean, typed, tested client.
 
 ## How it works
 
-1. `GET https://mapy.com/s/{id}` — Mapy.com replies with a plain **HTTP
+1. **Anonymous Routes**: `GET https://mapy.com/s/{id}` — Mapy.com replies with a plain **HTTP
    301** redirect; the full route state (waypoint geometry, routing
-   profile) is embedded in the `Location` header's query string. No
-   JavaScript execution needed.
-2. `GET https://mapy.com/api/tplannerexport` with the parsed waypoint data
-   and a `Referer: https://mapy.com/` header — this returns the raw GPX
-   file. No authentication is required for public/anonymous routes; the
-   endpoint 404s (not 403) if the `Referer` header is missing, which is
-   easy to mistake for the endpoint not existing.
+   profile) is embedded in the `Location` header's query string. We decode the proprietary `rc` parameter string and re-encode it as absolute chunks to `GET https://mapy.com/api/tplannerexport`, which returns the GPX file.
+2. **Saved Routes (dim links)**: If the link is a saved route, the geometry is stored server-side. We use `pyfrpc` to simulate Mapy.cz's FastRPC routing API (`https://mapy.com/api/mapybox-ng/`), locally decode the proprietary 5-bit delta-encoded geometry, interpolate elevations, and manually construct the GPX file locally.
 
 This is an unofficial client built against publicly observable network
 behavior, not a documented or officially supported API. It does not
@@ -35,6 +30,9 @@ the same request an anonymous browser session makes when you click
 
 ```bash
 uv pip install mapy-gpx-exporter
+
+# To support saved routes (dim links), install with the frpc extra:
+uv pip install mapy-gpx-exporter[frpc]
 ```
 
 ## CLI usage
@@ -80,14 +78,10 @@ asyncio.run(main())
 
 ## Limitations
 
-- Only tested against the "planned route" (`turisticka`/planner) share
-  link format. Mapy.com also has other share link types (single point,
-  "moje mapy" saved maps) which are out of scope for now.
-- No authentication support — routes that require a logged-in session to
-  view won't export.
-- This relies on an undocumented, unofficial endpoint. Mapy.com can
-  change it at any time without notice; if exports start failing, please
-  open an issue with a fresh captured request (see `CONTRIBUTING.md`).
+- Only tested against the "planned route" (`turisticka`/planner) and activity traces.
+- No authentication support — routes that require a logged-in session and are strictly private won't export.
+- This relies on an undocumented, unofficial endpoint and reverse-engineered formats. Mapy.com can
+  change it at any time without notice.
 
 ## Development
 

@@ -19,25 +19,8 @@ from .models import RouteParams
 _REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 
 
-def parse_route_from_location(location: str) -> RouteParams:
-    """Parse a Mapy.com planner URL (the redirect target) into RouteParams.
-
-    Pure function, no I/O — used by both the sync and async resolvers so
-    the parsing logic (and its tests) only exist once.
-    """
-    parsed = urlparse(location)
-    pairs = parse_qsl(parsed.query, keep_blank_values=True)
-
-    rc = next((v for k, v in pairs if k == "rc"), None)
-    if not rc:
-        raise ShortLinkResolutionError(
-            f"Redirect target has no 'rc' route parameter: {location}"
-        )
-
-    rs = [v for k, v in pairs if k == "rs"]
-    ri = [v for k, v in pairs if k == "ri"]
-    rwp = next((v for k, v in pairs if k == "rwp"), None)
-
+def _parse_profile_code(pairs: list[tuple[str, str]]) -> int:
+    """Extract the routing profile code from the 'mrp' query parameter, if present."""
     profile_code = 132
     mrp_raw = next((v for k, v in pairs if k == "mrp"), None)
     if mrp_raw:
@@ -47,8 +30,35 @@ def parse_route_from_location(location: str) -> RouteParams:
             raise ShortLinkResolutionError(
                 f"Could not parse 'mrp' JSON in redirect target: {mrp_raw!r}"
             ) from exc
+    return profile_code
 
-    return RouteParams(rc=rc, rs=rs, ri=ri, profile_code=profile_code, rwp=rwp)
+
+def parse_route_from_location(location: str) -> RouteParams:
+    """Parse a Mapy.com planner URL (the redirect target) into RouteParams.
+
+    Pure function, no I/O — used by both the sync and async resolvers so
+    the parsing logic (and its tests) only exist once.
+    """
+    parsed = urlparse(location)
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+
+    rc = next((v for k, v in pairs if k == "rc"), "")
+    dim = next((v for k, v in pairs if k == "dim"), None)
+
+    if not rc and not dim:
+        raise ShortLinkResolutionError(
+            f"Redirect target has no 'rc' or 'dim' route parameter: {location}"
+        )
+
+    if dim:
+        # We return a RouteParams with dim_id set.
+        # This keeps `parse_route_from_location` pure.
+        return RouteParams(dim_id=dim, profile_code=_parse_profile_code(pairs))
+
+    rs = [v for k, v in pairs if k == "rs"]
+    ri = [v for k, v in pairs if k == "ri"]
+
+    return RouteParams(rc=rc, rs=rs, ri=ri, profile_code=_parse_profile_code(pairs))
 
 
 def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
@@ -69,6 +79,16 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
         ShortLinkResolutionError: If the link doesn't redirect as expected,
             or the redirect target is missing required route parameters.
     """
+    # If the user pasted a long link directly, it might already contain the parameters.
+    # Long links return 200 OK because they are the actual SPA HTML page.
+    if "dim=" in short_url or "rc=" in short_url:
+        params = parse_route_from_location(short_url)
+        if params.dim_id:
+            from .frpc_resolver import resolve_dim_link
+
+            return resolve_dim_link(client, short_url, dim_id=params.dim_id)
+        return params
+
     try:
         response = client.get(short_url, follow_redirects=False)
     except httpx.HTTPError as exc:
@@ -76,14 +96,38 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
 
     if response.status_code not in _REDIRECT_STATUS_CODES:
         raise ShortLinkResolutionError(
-            f"Expected a redirect from {short_url}, got HTTP {response.status_code}. "
-            "The link may be invalid or expired."
+            f"Expected a redirect from {short_url}, got HTTP {response.status_code}"
         )
 
     location = response.headers.get("location")
+
+    # Follow redirects until we get the actual route parameters or hit a max limit
+    redirects = 0
+    while location and ("rc=" not in location and "dim=" not in location) and redirects < 5:
+        try:
+            response = client.get(location, follow_redirects=False)
+        except httpx.HTTPError as exc:
+            raise ShortLinkResolutionError(f"Request to {location} failed: {exc}") from exc
+
+        if response.status_code not in _REDIRECT_STATUS_CODES:
+            raise ShortLinkResolutionError(
+                f"Expected a redirect while following {location}, "
+                f"got HTTP {response.status_code}"
+            )
+
+        location = response.headers.get("location")
+        redirects += 1
+
     if not location:
         raise ShortLinkResolutionError(
-            f"Redirect from {short_url} had no Location header."
+            f"Redirect from {short_url} had no Location header with route parameters."
         )
 
-    return parse_route_from_location(location)
+    params = parse_route_from_location(location)
+
+    if params.dim_id:
+        from .frpc_resolver import resolve_dim_link
+
+        return resolve_dim_link(client, location, dim_id=params.dim_id)
+
+    return params

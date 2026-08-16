@@ -7,16 +7,16 @@ from pathlib import Path
 
 import httpx
 
-from .exceptions import GpxExportError, ShortLinkResolutionError
-from .exporter import _EXPORT_URL, _REQUIRED_HEADERS, export_gpx
+from .exceptions import ShortLinkResolutionError
+from .exporter import (
+    async_export_gpx,
+    export_gpx,
+)
 from .models import RouteParams
 from .resolver import parse_route_from_location, resolve_short_link
 
 _DEFAULT_HEADERS = {
-    "User-Agent": (
-        "mapy-gpx-exporter/0.1 "
-        "(+https://github.com/diamond447/mapy-gpx-exporter)"
-    ),
+    "User-Agent": ("mapy-gpx-exporter/0.1 (+https://github.com/diamond447/mapy-gpx-exporter)"),
 }
 
 
@@ -51,8 +51,7 @@ class AsyncMapyGpxClient:
     """Async client, useful for batch-exporting many links concurrently."""
 
     def __init__(self, timeout: float = 10.0, max_concurrent: int = 5) -> None:
-        self._client = httpx.AsyncClient(
-            headers=_DEFAULT_HEADERS, timeout=timeout)
+        self._client = httpx.AsyncClient(headers=_DEFAULT_HEADERS, timeout=timeout)
         self._semaphore = asyncio.Semaphore(max_concurrent)
 
     async def __aenter__(self) -> AsyncMapyGpxClient:
@@ -72,33 +71,21 @@ class AsyncMapyGpxClient:
             )
         location = response.headers.get("location")
         if not location:
-            raise ShortLinkResolutionError(
-                f"No Location header for {short_url}")
-        return parse_route_from_location(location)
+            raise ShortLinkResolutionError(f"No Location header for {short_url}")
+        params = parse_route_from_location(location)
+        if params.dim_id:
+            from .frpc_resolver import async_resolve_dim_link
+
+            return await async_resolve_dim_link(self._client, location, params.dim_id)
+        return params
 
     async def fetch_gpx(self, short_url: str, lang: str = "en") -> bytes:
+        """Resolve a share link and download its GPX in one call."""
         async with self._semaphore:
             route = await self._resolve(short_url)
-            params: list[tuple[str, str | int | float | bool | None]] = [
-                ("export", "gpx"),
-                ("lang", lang),
-                ("rp_c", route.profile_code),
-                *[("rg", chunk) for chunk in route.rg_chunks()],
-                *[("rs", value) for value in route.rs],
-                *[("ri", value) for value in route.ri],
-            ]
-            response = await self._client.get(
-                _EXPORT_URL, params=params, headers=_REQUIRED_HEADERS
-            )
-            if response.status_code != 200:
-                raise GpxExportError(
-                    f"Export failed for {short_url}: HTTP {response.status_code}"
-                )
-            return response.content
+            return await async_export_gpx(self._client, route, lang=lang)
 
-    async def fetch_many(
-        self, short_urls: list[str]
-    ) -> list[tuple[str, bytes | Exception]]:
+    async def fetch_many(self, short_urls: list[str]) -> list[tuple[str, bytes | Exception]]:
         """Fetch GPX for many links concurrently (bounded by max_concurrent).
 
         Returns a list of (url, result) pairs where result is either the
