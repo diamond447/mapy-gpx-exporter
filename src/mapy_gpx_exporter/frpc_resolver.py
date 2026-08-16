@@ -4,6 +4,7 @@ import uuid
 
 import httpx
 
+from .decoder import decode_mapy_geometry, interpolate_elevation
 from .exceptions import ShortLinkResolutionError
 from .models import RouteParams
 
@@ -69,59 +70,120 @@ def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteP
                 return obj.decode("utf-8", errors="replace")
             elif isinstance(obj, dict):
                 return {
-                    k.decode("utf-8", errors="replace") if isinstance(k, bytes) else k: _decode(v)
+                    k.decode("utf-8") if isinstance(k, bytes) else k: _decode(v)
                     for k, v in obj.items()
                 }
             elif isinstance(obj, (list, tuple)):
                 return [_decode(x) for x in obj]
             return obj
 
-        data = _decode(data)
+        decoded_data = _decode(data)
+        import json
+            
+        if isinstance(decoded_data, list) and len(decoded_data) > 0:
+            data = decoded_data[0]
+        else:
+            data = decoded_data
     except Exception as exc:
         raise ShortLinkResolutionError(f"Failed to decode Mapy.cz FRPC response: {exc}") from exc
 
     try:
-        # data is usually a list with one dict inside it
-        if isinstance(data, list) and len(data) > 0:
-            if isinstance(data[0], dict):
-                like_data = data[0].get("like", {})
-            elif isinstance(data[0], list) and len(data[0]) > 0 and isinstance(data[0][0], dict):
-                like_data = data[0][0].get("like", {})
-            else:
-                like_data = {}
-        elif isinstance(data, dict):
-            like_data = data.get("like", {})
+        def find_all_keys(obj: typing.Any, key: str) -> list[typing.Any]:
+            results = []
+            if isinstance(obj, dict):
+                if key in obj:
+                    results.append(obj[key])
+                for v in obj.values():
+                    results.extend(find_all_keys(v, key))
+            elif isinstance(obj, list):
+                for item in obj:
+                    results.extend(find_all_keys(item, key))
+            return results
+
+        # 1. Title
+        title_candidates = find_all_keys(data, "title")
+        title = title_candidates[0] if title_candidates else ""
+
+        # 2. Elevation profile (sznAltitude)
+        szn_candidates = find_all_keys(data, "sznAltitude")
+        szn_altitude = []
+        if szn_candidates and isinstance(szn_candidates[0], dict) and "data" in szn_candidates[0]:
+            szn_altitude = szn_candidates[0]["data"]
+
+        # 3. Route string or list
+        route_candidates = find_all_keys(data, "route")
+        
+        route_str = ""
+        route_list = []
+        
+        for cand in route_candidates:
+            if isinstance(cand, str) and len(cand) > 100:
+                route_str = cand
+                break
+            elif isinstance(cand, list) and len(cand) > 0 and isinstance(cand[0], dict) and "geometry" in cand[0]:
+                route_list = cand
+                break
+
+        # 1. Look for a parent object containing BOTH 'route' (list) and 'geometry' (str).
+        # This is the hallmark of a Type 1 "planned route" disguised as a dim link.
+        def find_parent_geom(obj: typing.Any) -> str | None:
+            if isinstance(obj, dict):
+                has_route = "route" in obj and isinstance(obj["route"], list)
+                has_geom = "geometry" in obj and isinstance(obj["geometry"], str)
+                if has_route and has_geom and len(obj["geometry"]) > 0:
+                    return str(obj["geometry"])
+                for v in obj.values():
+                    res = find_parent_geom(v)
+                    if res:
+                        return res
+            elif isinstance(obj, list):
+                for v in obj:
+                    res = find_parent_geom(v)
+                    if res:
+                        return res
+            return None
+            
+        parent_geom = find_parent_geom(data)
+        
+        geometry_points = []
+        if parent_geom:
+            geometry_points = decode_mapy_geometry(parent_geom)
         else:
-            like_data = {}
+            if route_str:
+                # Type 3 (Activity): single route string. Requires a mark.
+                mark_candidates = find_all_keys(data, "mark")
+                if mark_candidates and isinstance(mark_candidates[0], dict):
+                    geometry_points = decode_mapy_geometry(route_str)
+            elif route_list:
+                # Type 2 (Planned Route): list of waypoints.
+                for wp in route_list:
+                    geom = wp.get("geometry", "")
+                    if geom:
+                        geometry_points.extend(decode_mapy_geometry(geom))
+                    
+        # Extract total length for sanity checks
+        length_candidates = find_all_keys(data, "totalLength")
+        total_length = length_candidates[0] if length_candidates else None
 
-        route_list = like_data.get("data", {}).get("route", [])
+        if not geometry_points:
+            raise ShortLinkResolutionError("Unknown route data structure: missing both explicit geometry and route nodes.")
 
-        rg_list = []
-        rs_list = []
-        ri_list = []
-
-        for wp in route_list:
-            rg_list.append(wp.get("geometry", ""))
-            rs_list.append(wp.get("source", "coor"))
-
-            wp_id = wp.get("id", "")
-            # If id is a float/coord string, ri is empty. If it's an int (POI), ri is the int.
-            if isinstance(wp_id, int) or (isinstance(wp_id, str) and wp_id.isdigit()):
-                ri_list.append(str(wp_id))
-            else:
-                ri_list.append("")
+        # Interpolate elevation and apply drift sanity check
+        interpolated_points: list[tuple[float, float, float]] = []
+        if geometry_points:
+            interpolated_points = interpolate_elevation(geometry_points, szn_altitude, total_length)
 
     except Exception as exc:
-        raise ShortLinkResolutionError(f"Failed to extract route array from FRPC: {exc}") from exc
+        raise ShortLinkResolutionError(f"Failed to extract route geometry from FRPC: {exc}") from exc
 
-    if not rg_list:
+    if not interpolated_points:
         raise ShortLinkResolutionError(
-            f"No geometries found in the FRPC response for dim={dim_id}."
+            f"No valid geometry points found in the FRPC response for dim={dim_id}."
         )
 
     return RouteParams(
-        rg=rg_list,
-        rs=rs_list,
-        ri=ri_list,
+        resolution_method="local_decode",
+        title=title,
+        geometry_points=interpolated_points,
         profile_code=132,  # default to cycling, GPX exporter handles it
     )

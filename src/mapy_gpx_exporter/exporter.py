@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
+from xml.dom import minidom
+
 import httpx
 
 from .exceptions import GpxExportError
@@ -32,6 +35,32 @@ def export_gpx(client: httpx.Client, route: RouteParams, lang: str = "en") -> by
         GpxExportError: On network failure, non-2xx response, or a
             response that doesn't look like GPX/XML.
     """
+    if route.resolution_method == "local_decode":
+        gpx = ET.Element("gpx", {
+            "version": "1.1",
+            "creator": "mapy-gpx-exporter",
+            "xmlns": "http://www.topografix.com/GPX/1/1",
+        })
+        
+        trk = ET.SubElement(gpx, "trk")
+        if route.title:
+            name = ET.SubElement(trk, "name")
+            name.text = route.title
+            
+        trkseg = ET.SubElement(trk, "trkseg")
+        
+        for pt in route.geometry_points:
+            lat, lon = pt[0], pt[1]
+            trkpt = ET.SubElement(trkseg, "trkpt", {"lat": str(lat), "lon": str(lon)})
+            if len(pt) >= 3:
+                ele = ET.SubElement(trkpt, "ele")
+                ele.text = f"{pt[2]:.1f}"
+                
+        rough_string = ET.tostring(gpx, 'utf-8')
+        reparsed = minidom.parseString(rough_string)
+        # minidom adds a generic xml declaration, toprettyxml returns bytes if encoding is passed
+        return reparsed.toprettyxml(indent="  ", encoding="utf-8")
+
     params: list[tuple[str, str | int | float | bool | None]] = [
         ("export", "gpx"),
         ("lang", lang),

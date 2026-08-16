@@ -14,9 +14,9 @@ def test_resolve_dim_link_success() -> None:
         "like": {
             "data": {
                 "route": [
-                    {"geometry": "9dSTART", "source": "coor", "id": "1.1,2.2"},
-                    {"geometry": "9dMIDDLE", "source": "stre", "id": 12345},
-                    {"geometry": "9dEND", "source": "coor", "id": "3.3,4.4"},
+                    {"geometry": "q0000q0000", "source": "coor", "id": "1.1,2.2"},
+                    {"geometry": "q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000", "source": "stre", "id": 12345},
+                    {"geometry": "q0000q0000", "source": "coor", "id": "3.3,4.4"},
                 ]
             }
         }
@@ -35,9 +35,10 @@ def test_resolve_dim_link_success() -> None:
             "123456789012345678901234",
         )
 
-    assert route.rg == ["9dSTART", "9dMIDDLE", "9dEND"]
-    assert route.rs == ["coor", "stre", "coor"]
-    assert route.ri == ["", "12345", ""]
+    assert route.resolution_method == "local_decode"
+    assert len(route.geometry_points) > 0
+    # no longer populating rs
+    # no longer populating ri
     assert route.profile_code == 132
 
 
@@ -66,5 +67,5 @@ def test_resolve_dim_link_no_geometries() -> None:
     )
 
     with httpx.Client() as client:
-        with pytest.raises(ShortLinkResolutionError, match="No geometries found"):
-            resolve_dim_link(client, "https://mapy.com/invalid", "123456789012345678901234")
+        with pytest.raises(ShortLinkResolutionError, match="Unknown route data structure"):
+            resolve_dim_link(client, "https://mapy.com/s/mock", "123456789012345678901234")

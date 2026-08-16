@@ -105,15 +105,20 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
     except httpx.HTTPError as exc:
         raise ShortLinkResolutionError(f"Request to {short_url} failed: {exc}") from exc
 
-    if response.status_code not in _REDIRECT_STATUS_CODES:
-        raise ShortLinkResolutionError(
-            f"Expected a redirect from {short_url}, got HTTP {response.status_code}. "
-            "The link may be invalid or expired."
-        )
-
     location = response.headers.get("location")
+    
+    # Follow redirects until we get the actual route parameters or hit a max limit
+    redirects = 0
+    while location and ("rc=" not in location and "dim=" not in location) and redirects < 5:
+        try:
+            response = client.get(location, follow_redirects=False)
+            location = response.headers.get("location")
+            redirects += 1
+        except httpx.HTTPError as exc:
+            raise ShortLinkResolutionError(f"Request to {location} failed: {exc}") from exc
+
     if not location:
-        raise ShortLinkResolutionError(f"Redirect from {short_url} had no Location header.")
+        raise ShortLinkResolutionError(f"Redirect from {short_url} had no Location header with route parameters.")
 
     params = parse_route_from_location(location)
 
