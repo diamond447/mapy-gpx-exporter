@@ -22,8 +22,8 @@ def test_resolve_dim_link_success() -> None:
                             "q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000"
                             "q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000"
                         ),
-                        "source": "stre", 
-                        "id": 12345
+                        "source": "stre",
+                        "id": 12345,
                     },
                     {"geometry": "q0000q0000", "source": "coor", "id": "3.3,4.4"},
                 ]
@@ -79,6 +79,7 @@ def test_resolve_dim_link_no_geometries() -> None:
         with pytest.raises(ShortLinkResolutionError, match="Unknown route data structure"):
             resolve_dim_link(client, "https://mapy.com/s/mock", "123456789012345678901234")
 
+
 @pytest.mark.anyio
 @respx.mock
 async def test_async_resolve_dim_link_success() -> None:
@@ -94,8 +95,8 @@ async def test_async_resolve_dim_link_success() -> None:
                             "q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000"
                             "q0000q0000q0000q0000q0000q0000q0000q0000q0000q0000"
                         ),
-                        "source": "stre", 
-                        "id": 12345
+                        "source": "stre",
+                        "id": 12345,
                     },
                     {"geometry": "q0000q0000", "source": "coor", "id": "3.3,4.4"},
                 ]

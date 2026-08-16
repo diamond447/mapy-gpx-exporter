@@ -11,15 +11,17 @@ def test_haversine_distance() -> None:
     dist = haversine_distance(lat1, lon1, lat2, lon2)
     assert 340_000 <= dist <= 345_000, f"Distance {dist} is out of bounds"
     assert haversine_distance(lat1, lon1, lat1, lon1) == 0.0
+
+
 def test_decode_mapy_geometry() -> None:
     expected_points = [
-        [45.61053, 7.351958], 
-        [45.610351, 7.35203], 
-        [45.610321, 7.352162], 
-        [45.610308, 7.352294], 
-        [45.610289, 7.352487]
+        [45.61053, 7.351958],
+        [45.610351, 7.35203],
+        [45.610321, 7.352162],
+        [45.610308, 7.352294],
+        [45.610289, 7.352487],
     ]
-    
+
     # We check that the first 5 points are accurately decoded.
     encoded_str = (
         "9Qv8axCZOUNsIr6bMP6cMkONMcPGMfQFM9OpMOOTMMOMN4O8MvObMh6cMmOXMIOG"
@@ -116,11 +118,12 @@ def test_decode_mapy_geometry() -> None:
         assert abs(decoded[i][0] - exp_lat) < 1e-4
         assert abs(decoded[i][1] - exp_lon) < 1e-4
 
+
 def test_interpolate_elevation() -> None:
     points = [
-        (0.0, 0.0), 
-        (0.0, 0.1), 
-        (0.0, 0.2), 
+        (0.0, 0.0),
+        (0.0, 0.1),
+        (0.0, 0.2),
     ]
     szn_altitude = [
         {"dist": 0.0, "alt": 100.0},

@@ -63,13 +63,14 @@ class RouteParams:
 
         try:
             from .decoder import decode_mapy_geometry, encode_mapy_geometry
+
             pts = decode_mapy_geometry(self.rc)
             return encode_mapy_geometry(pts)
         except Exception as exc:
             import warnings
+
             warnings.warn(
-                f"decode/encode round-trip failed, falling back to naive split: {exc}", 
-                stacklevel=2
+                f"decode/encode round-trip failed, falling back to naive split: {exc}", stacklevel=2
             )
             # Fallback to naive splitting if decoding fails for some reason
             num_points = len(self.ri) or len(self.rs) or 1

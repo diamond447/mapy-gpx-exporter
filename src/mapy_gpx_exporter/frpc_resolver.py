@@ -1,5 +1,6 @@
 """Resolve shortened mapy.com/s/{id} links that contain 'dim' (saved routes) using FRPC."""
 
+import typing
 import uuid
 
 import httpx
@@ -24,18 +25,26 @@ def _prepare_dim_request(location: str, dim_id: str) -> tuple[str, dict[str, str
         "Origin": "https://mapy.com",
     }
 
-    # Since dim_id is exactly 24 chars, \x18 is the correct length prefix for a string in FRPC
+    # FRPC binary payload structure (FastRPC v2.1 encoding):
+    #   \xca\x11     — FRPC magic number
+    #   \x02\x01     — protocol version 2.1
+    #   h            — method call marker
+    #   \x0b         — method name length (11 bytes)
+    #   like.detail  — method name (ASCII)
+    #   \x20         — string type marker
+    #   \x18         — string length (24 bytes = length of dim_id)
+    #   <dim_id>     — 24-byte document ID (UTF-8)
+    #   P\x01\x04langX\x01\x20\x02en — struct { lang: "en" }
     payload = (
         b"\xca\x11\x02\x01h\x0blike.detail \x18"
         + dim_id.encode("utf-8")
         + b"P\x01\x04langX\x01 \x02en"
     )
-    
+
     return url, headers, payload
 
 
 def _parse_dim_response(content: bytes, dim_id: str) -> RouteParams:
-    import typing
     try:
         import pyfrpc  # type: ignore[import-untyped]
     except ImportError as e:
@@ -56,12 +65,12 @@ def _parse_dim_response(content: bytes, dim_id: str) -> RouteParams:
                     k.decode("utf-8") if isinstance(k, bytes) else k: _decode(v)
                     for k, v in obj.items()
                 }
-            elif isinstance(obj, (list, tuple)):
+            elif isinstance(obj, list | tuple):
                 return [_decode(x) for x in obj]
             return obj
 
         decoded_data = _decode(data)
-            
+
         if isinstance(decoded_data, list) and len(decoded_data) > 0:
             data = decoded_data[0]
         else:
@@ -70,6 +79,7 @@ def _parse_dim_response(content: bytes, dim_id: str) -> RouteParams:
         raise ShortLinkResolutionError(f"Failed to decode Mapy.cz FRPC response: {exc}") from exc
 
     try:
+
         def find_all_keys(obj: typing.Any, key: str) -> list[typing.Any]:
             results = []
             if isinstance(obj, dict):
@@ -94,18 +104,18 @@ def _parse_dim_response(content: bytes, dim_id: str) -> RouteParams:
 
         # 3. Route string or list
         route_candidates = find_all_keys(data, "route")
-        
+
         route_str = ""
         route_list = []
-        
+
         for cand in route_candidates:
             if isinstance(cand, str) and len(cand) > 100:
                 route_str = cand
                 break
             elif (
-                isinstance(cand, list) 
-                and len(cand) > 0 
-                and isinstance(cand[0], dict) 
+                isinstance(cand, list)
+                and len(cand) > 0
+                and isinstance(cand[0], dict)
                 and "geometry" in cand[0]
             ):
                 route_list = cand
@@ -129,9 +139,9 @@ def _parse_dim_response(content: bytes, dim_id: str) -> RouteParams:
                     if res:
                         return res
             return None
-            
+
         parent_geom = find_parent_geom(data)
-        
+
         geometry_points = []
         if parent_geom:
             geometry_points = decode_mapy_geometry(parent_geom)
@@ -147,7 +157,7 @@ def _parse_dim_response(content: bytes, dim_id: str) -> RouteParams:
                     geom = wp.get("geometry", "")
                     if geom:
                         geometry_points.extend(decode_mapy_geometry(geom))
-                    
+
         # Extract total length for sanity checks
         length_candidates = find_all_keys(data, "totalLength")
         total_length = length_candidates[0] if length_candidates else None
@@ -207,9 +217,7 @@ def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteP
 
 
 async def async_resolve_dim_link(
-    client: httpx.AsyncClient, 
-    location: str, 
-    dim_id: str
+    client: httpx.AsyncClient, location: str, dim_id: str
 ) -> RouteParams:
     """Resolve a mapy.com 'dim' link asynchronously."""
     url, headers, payload = _prepare_dim_request(location, dim_id)

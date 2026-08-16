@@ -8,7 +8,13 @@ from pathlib import Path
 import httpx
 
 from .exceptions import GpxExportError, ShortLinkResolutionError
-from .exporter import _EXPORT_URL, _REQUIRED_HEADERS, export_gpx
+from .exporter import (
+    _EXPORT_URL,
+    _REQUIRED_HEADERS,
+    build_export_params,
+    build_local_gpx,
+    export_gpx,
+)
 from .models import RouteParams
 from .resolver import parse_route_from_location, resolve_short_link
 
@@ -72,21 +78,24 @@ class AsyncMapyGpxClient:
         params = parse_route_from_location(location)
         if params.dim_id:
             from .frpc_resolver import async_resolve_dim_link
+
             return await async_resolve_dim_link(self._client, location, params.dim_id)
         return params
 
     async def fetch_gpx(self, short_url: str, lang: str = "en") -> bytes:
         async with self._semaphore:
             route = await self._resolve(short_url)
-            params: list[tuple[str, str | int | float | bool | None]] = [
-                ("export", "gpx"),
-                ("lang", lang),
-                ("rp_c", route.profile_code),
-                *[("rg", chunk) for chunk in route.rg_chunks()],
-                *[("rs", value) for value in route.rs],
-                *[("ri", value) for value in route.ri],
-            ]
-            response = await self._client.get(_EXPORT_URL, params=params, headers=_REQUIRED_HEADERS)
+
+            # dim links are resolved locally — generate GPX from decoded points
+            if route.resolution_method == "local_decode":
+                return build_local_gpx(route)
+
+            params = build_export_params(route, lang=lang)
+            response = await self._client.get(
+                _EXPORT_URL,
+                params=params,
+                headers=_REQUIRED_HEADERS,
+            )
             if response.status_code != 200:
                 raise GpxExportError(f"Export failed for {short_url}: HTTP {response.status_code}")
             return response.content

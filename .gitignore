@@ -9,3 +9,4 @@ venv/
 gpx/
 *.gpx
 !tests/fixtures/*.gpx
+implementation_plan.md

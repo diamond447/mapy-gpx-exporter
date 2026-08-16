@@ -103,8 +103,13 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
     except httpx.HTTPError as exc:
         raise ShortLinkResolutionError(f"Request to {short_url} failed: {exc}") from exc
 
+    if response.status_code not in _REDIRECT_STATUS_CODES:
+        raise ShortLinkResolutionError(
+            f"Expected a redirect from {short_url}, got HTTP {response.status_code}"
+        )
+
     location = response.headers.get("location")
-    
+
     # Follow redirects until we get the actual route parameters or hit a max limit
     redirects = 0
     while location and ("rc=" not in location and "dim=" not in location) and redirects < 5:
