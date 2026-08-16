@@ -1,4 +1,5 @@
 # mapy-gpx-exporter
+[![CI](https://github.com/diamond447/mapy-gpx-exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/diamond447/mapy-gpx-exporter/actions/workflows/ci.yml)
 
 Export GPX files from [Mapy.com](https://mapy.com) route planner share
 links (`mapy.com/s/{id}`) — one link or a whole batch, from the command
