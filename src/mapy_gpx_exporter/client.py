@@ -7,13 +7,15 @@ from pathlib import Path
 
 import httpx
 
-from .exceptions import ShortLinkResolutionError
 from .exporter import (
     async_export_gpx,
     export_gpx,
 )
 from .models import RouteParams
-from .resolver import parse_route_from_location, resolve_short_link
+from .resolver import (
+    async_resolve_short_link,
+    resolve_short_link,
+)
 
 _DEFAULT_HEADERS = {
     "User-Agent": ("mapy-gpx-exporter/0.1 (+https://github.com/diamond447/mapy-gpx-exporter)"),
@@ -63,26 +65,10 @@ class AsyncMapyGpxClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def _resolve(self, short_url: str) -> RouteParams:
-        response = await self._client.get(short_url, follow_redirects=False)
-        if response.status_code not in (301, 302, 303, 307, 308):
-            raise ShortLinkResolutionError(
-                f"Expected a redirect from {short_url}, got HTTP {response.status_code}"
-            )
-        location = response.headers.get("location")
-        if not location:
-            raise ShortLinkResolutionError(f"No Location header for {short_url}")
-        params = parse_route_from_location(location)
-        if params.dim_id:
-            from .frpc_resolver import async_resolve_dim_link
-
-            return await async_resolve_dim_link(self._client, location, params.dim_id)
-        return params
-
     async def fetch_gpx(self, short_url: str, lang: str = "en") -> bytes:
         """Resolve a share link and download its GPX in one call."""
         async with self._semaphore:
-            route = await self._resolve(short_url)
+            route = await async_resolve_short_link(self._client, short_url)
             return await async_export_gpx(self._client, route, lang=lang)
 
     async def fetch_many(self, short_urls: list[str]) -> list[tuple[str, bytes | Exception]]:

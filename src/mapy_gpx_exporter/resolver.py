@@ -131,3 +131,56 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
         return resolve_dim_link(client, location, dim_id=params.dim_id)
 
     return params
+
+
+async def async_resolve_short_link(client: httpx.AsyncClient, short_url: str) -> RouteParams:
+    """Async equivalent of resolve_short_link."""
+    if "dim=" in short_url or "rc=" in short_url:
+        params = parse_route_from_location(short_url)
+        if params.dim_id:
+            from .frpc_resolver import async_resolve_dim_link
+
+            return await async_resolve_dim_link(client, short_url, dim_id=params.dim_id)
+        return params
+
+    try:
+        response = await client.get(short_url, follow_redirects=False)
+    except httpx.HTTPError as exc:
+        raise ShortLinkResolutionError(f"Request to {short_url} failed: {exc}") from exc
+
+    if response.status_code not in _REDIRECT_STATUS_CODES:
+        raise ShortLinkResolutionError(
+            f"Expected a redirect from {short_url}, got HTTP {response.status_code}"
+        )
+
+    location = response.headers.get("location")
+
+    redirects = 0
+    while location and ("rc=" not in location and "dim=" not in location) and redirects < 5:
+        try:
+            response = await client.get(location, follow_redirects=False)
+        except httpx.HTTPError as exc:
+            raise ShortLinkResolutionError(f"Request to {location} failed: {exc}") from exc
+
+        if response.status_code not in _REDIRECT_STATUS_CODES:
+            raise ShortLinkResolutionError(
+                f"Expected a redirect while following {location}, "
+                f"got HTTP {response.status_code}"
+            )
+
+        location = response.headers.get("location")
+        redirects += 1
+
+    if not location:
+        raise ShortLinkResolutionError(
+            f"Redirect from {short_url} had no Location header with route parameters."
+        )
+
+    params = parse_route_from_location(location)
+
+    if params.dim_id:
+        from .frpc_resolver import async_resolve_dim_link
+
+        return await async_resolve_dim_link(client, location, dim_id=params.dim_id)
+
+    return params

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -62,13 +63,11 @@ class RouteParams:
             return []
 
         try:
-            from .decoder import decode_mapy_geometry, encode_mapy_geometry
+            from .decoder import DecodingException, decode_mapy_geometry, encode_mapy_geometry
 
             pts = decode_mapy_geometry(self.rc)
             return encode_mapy_geometry(pts)
-        except Exception as exc:
-            import warnings
-
+        except DecodingException as exc:
             warnings.warn(
                 f"decode/encode round-trip failed, falling back to naive split: {exc}", stacklevel=2
             )
