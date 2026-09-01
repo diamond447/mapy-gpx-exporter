@@ -5,7 +5,12 @@ route planner. No authentication is required for anonymous/public routes.
 """
 
 from .client import AsyncMapyGpxClient, MapyGpxClient, save_gpx
-from .exceptions import GpxExportError, MapyGpxError, ShortLinkResolutionError
+from .exceptions import (
+    GpxExportError,
+    MapyGpxError,
+    MissingOptionalDependencyError,
+    ShortLinkResolutionError,
+)
 from .models import RouteParams
 
 __all__ = [
@@ -14,6 +19,7 @@ __all__ = [
     "save_gpx",
     "GpxExportError",
     "MapyGpxError",
+    "MissingOptionalDependencyError",
     "ShortLinkResolutionError",
     "RouteParams",
 ]

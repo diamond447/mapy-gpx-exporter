@@ -6,8 +6,17 @@ import uuid
 import httpx
 
 from .decoder import decode_mapy_geometry, interpolate_elevation
-from .exceptions import ShortLinkResolutionError
+from .exceptions import MissingOptionalDependencyError, ShortLinkResolutionError
 from .models import RouteParams
+
+
+def _require_pyfrpc() -> typing.Any:
+    """Import the optional FRPC dependency or raise a domain error."""
+    try:
+        import pyfrpc  # type: ignore[import-untyped]
+    except ImportError as exc:
+        raise MissingOptionalDependencyError from exc
+    return pyfrpc
 
 
 def _prepare_dim_request(location: str, dim_id: str) -> tuple[str, dict[str, str], bytes]:
@@ -44,15 +53,7 @@ def _prepare_dim_request(location: str, dim_id: str) -> tuple[str, dict[str, str
     return url, headers, payload
 
 
-def _parse_dim_response(content: bytes, dim_id: str) -> RouteParams:
-    try:
-        import pyfrpc  # type: ignore[import-untyped]
-    except ImportError as e:
-        raise ImportError(
-            "Resolving saved routes (dim links) requires the pyfrpc library. "
-            "Please install the package with the frpc extra: pip install mapy-gpx-exporter[frpc]"
-        ) from e
-
+def _parse_dim_response(content: bytes, dim_id: str, pyfrpc: typing.Any) -> RouteParams:
     try:
         response_obj = pyfrpc.decode(content)
         data = getattr(response_obj, "result", response_obj)
@@ -206,9 +207,10 @@ def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteP
         dim_id: The document ID (e.g. 69039f733c8bfe32fe7ecc52).
 
     Raises:
-        ImportError: If pyfrpc is not installed.
+        MissingOptionalDependencyError: If pyfrpc is not installed.
         ShortLinkResolutionError: If the FRPC request fails or geometry is missing.
     """
+    pyfrpc = _require_pyfrpc()
     url, headers, payload = _prepare_dim_request(location, dim_id)
 
     try:
@@ -217,13 +219,19 @@ def resolve_dim_link(client: httpx.Client, location: str, dim_id: str) -> RouteP
     except httpx.HTTPError as exc:
         raise ShortLinkResolutionError(f"Failed to fetch mapybox-ng FRPC: {exc}") from exc
 
-    return _parse_dim_response(response.content, dim_id)
+    return _parse_dim_response(response.content, dim_id, pyfrpc)
 
 
 async def async_resolve_dim_link(
     client: httpx.AsyncClient, location: str, dim_id: str
 ) -> RouteParams:
-    """Resolve a mapy.com 'dim' link asynchronously."""
+    """Resolve a mapy.com 'dim' link asynchronously.
+
+    Raises:
+        MissingOptionalDependencyError: If pyfrpc is not installed.
+        ShortLinkResolutionError: If the FRPC request fails or geometry is missing.
+    """
+    pyfrpc = _require_pyfrpc()
     url, headers, payload = _prepare_dim_request(location, dim_id)
 
     try:
@@ -232,4 +240,4 @@ async def async_resolve_dim_link(
     except httpx.HTTPError as exc:
         raise ShortLinkResolutionError(f"Failed to fetch mapybox-ng FRPC: {exc}") from exc
 
-    return _parse_dim_response(response.content, dim_id)
+    return _parse_dim_response(response.content, dim_id, pyfrpc)

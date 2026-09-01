@@ -1,11 +1,14 @@
 """Tests for the sync and async client classes."""
 
+import sys
+
 import httpx
 import pyfrpc  # type: ignore[import-untyped]
 import pytest
 import respx
 
 from mapy_gpx_exporter.client import AsyncMapyGpxClient, MapyGpxClient
+from mapy_gpx_exporter.exceptions import MissingOptionalDependencyError
 
 # Real Location header captured from mapy.com (mukekodezu).
 _REDIRECT_LOCATION = (
@@ -49,7 +52,7 @@ _DIM_MOCK_DATA = {
 }
 
 _DIM_REDIRECT_LOCATION = (
-    "https://mapy.com/en/turisticka?planovani-trasy" "&dim=123456789012345678901234"
+    "https://mapy.com/en/turisticka?planovani-trasy&dim=123456789012345678901234"
 )
 
 
@@ -78,6 +81,17 @@ def test_sync_client_fetch_gpx_rc_link() -> None:
         gpx = client.fetch_gpx("https://mapy.com/s/mukekodezu")
 
     assert gpx.startswith(b"<?xml")
+
+
+@respx.mock
+def test_sync_client_propagates_missing_pyfrpc(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "pyfrpc", None)
+
+    with MapyGpxClient() as client:
+        with pytest.raises(MissingOptionalDependencyError):
+            client.resolve(_DIM_REDIRECT_LOCATION)
+
+    assert not respx.calls
 
 
 @respx.mock
@@ -151,6 +165,18 @@ async def test_async_client_fetch_gpx_dim_link() -> None:
     # Should produce valid XML GPX from locally decoded geometry
     assert gpx.startswith(b"<?xml")
     assert b"<trkpt" in gpx
+
+
+@pytest.mark.anyio
+@respx.mock
+async def test_async_client_propagates_missing_pyfrpc(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "pyfrpc", None)
+
+    async with AsyncMapyGpxClient() as client:
+        with pytest.raises(MissingOptionalDependencyError):
+            await client.fetch_gpx(_DIM_REDIRECT_LOCATION)
+
+    assert not respx.calls
 
 
 @pytest.mark.anyio
