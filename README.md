@@ -28,11 +28,16 @@ the same request an anonymous browser session makes when you click
 
 ## Install
 
+Anonymous route links (`rc` links) only need the base package:
+
 ```bash
 uv pip install mapy-gpx-exporter
+```
 
-# To support saved routes (dim links), install with the frpc extra:
-uv pip install mapy-gpx-exporter[frpc]
+Saved routes (dim links) require the optional FRPC support:
+
+```bash
+uv pip install "mapy-gpx-exporter[frpc]"
 ```
 
 ## CLI usage
@@ -43,6 +48,13 @@ mapy-gpx export https://mapy.com/s/mukekodezu -o route.gpx
 
 # batch: one link per line in links.txt
 mapy-gpx batch links.txt --out-dir ./gpx --concurrency 5
+```
+
+Example output:
+
+```console
+$ mapy-gpx export https://mapy.com/s/mukekodezu -o route.gpx
+Saved route.gpx
 ```
 
 Batch filenames are derived safely from each URL's path; query strings and

@@ -137,7 +137,7 @@ async def test_async_client_fetch_gpx_rc_link() -> None:
 
     assert gpx.startswith(b"<?xml")
 
-    # Verify name and title params — this was the Copilot-reported bug
+    # Verify the async export includes the required name and title query params.
     request = export_route.calls.last.request
     assert "name=export" in str(request.url)
     assert "title=export" in str(request.url)

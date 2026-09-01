@@ -49,8 +49,6 @@ def test_resolve_dim_link_success() -> None:
 
     assert route.resolution_method == "local_decode"
     assert len(route.geometry_points) > 0
-    # no longer populating rs
-    # no longer populating ri
     assert route.profile_code == 132
 
 
