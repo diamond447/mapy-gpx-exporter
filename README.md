@@ -63,6 +63,7 @@ Batch export, async:
 import asyncio
 from mapy_gpx_exporter import AsyncMapyGpxClient
 
+
 async def main():
     urls = ["https://mapy.com/s/mukekodezu", "https://mapy.com/s/another"]
     async with AsyncMapyGpxClient(max_concurrent=5) as client:
@@ -72,6 +73,7 @@ async def main():
             print(f"failed: {url}: {result}")
         else:
             print(f"ok: {url} ({len(result)} bytes)")
+
 
 asyncio.run(main())
 ```
