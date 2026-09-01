@@ -44,7 +44,12 @@ class MapyGpxClient:
         return export_gpx(self._client, route, lang=lang)
 
     def fetch_gpx(self, short_url: str, lang: str = "en") -> bytes:
-        """Resolve a share link and download its GPX in one call."""
+        """Resolve a share link and download its GPX in one call.
+
+        Raises:
+            MissingOptionalDependencyError: If the link is a saved route and
+                pyfrpc is not installed.
+        """
         route = self.resolve(short_url)
         return self.export(route, lang=lang)
 
@@ -68,7 +73,12 @@ class AsyncMapyGpxClient:
         await self._client.aclose()
 
     async def fetch_gpx(self, short_url: str, lang: str = "en") -> bytes:
-        """Resolve a share link and download its GPX in one call."""
+        """Resolve a share link and download its GPX in one call.
+
+        Raises:
+            MissingOptionalDependencyError: If the link is a saved route and
+                pyfrpc is not installed.
+        """
         async with self._semaphore:
             route = await async_resolve_short_link(self._client, short_url)
             return await async_export_gpx(self._client, route, lang=lang)

@@ -76,6 +76,8 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
         :func:`mapy_gpx_exporter.exporter.export_gpx`.
 
     Raises:
+        MissingOptionalDependencyError: If the link is a saved route and pyfrpc
+            is not installed.
         ShortLinkResolutionError: If the link doesn't redirect as expected,
             or the redirect target is missing required route parameters.
     """
@@ -111,8 +113,7 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
 
         if response.status_code not in _REDIRECT_STATUS_CODES:
             raise ShortLinkResolutionError(
-                f"Expected a redirect while following {location}, "
-                f"got HTTP {response.status_code}"
+                f"Expected a redirect while following {location}, got HTTP {response.status_code}"
             )
 
         location = response.headers.get("location")
@@ -134,7 +135,14 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
 
 
 async def async_resolve_short_link(client: httpx.AsyncClient, short_url: str) -> RouteParams:
-    """Async equivalent of resolve_short_link."""
+    """Async equivalent of resolve_short_link.
+
+    Raises:
+        MissingOptionalDependencyError: If the link is a saved route and pyfrpc
+            is not installed.
+        ShortLinkResolutionError: If the link doesn't redirect as expected,
+            or the redirect target is missing required route parameters.
+    """
     if "dim=" in short_url or "rc=" in short_url:
         params = parse_route_from_location(short_url)
         if params.dim_id:
@@ -164,8 +172,7 @@ async def async_resolve_short_link(client: httpx.AsyncClient, short_url: str) ->
 
         if response.status_code not in _REDIRECT_STATUS_CODES:
             raise ShortLinkResolutionError(
-                f"Expected a redirect while following {location}, "
-                f"got HTTP {response.status_code}"
+                f"Expected a redirect while following {location}, got HTTP {response.status_code}"
             )
 
         location = response.headers.get("location")

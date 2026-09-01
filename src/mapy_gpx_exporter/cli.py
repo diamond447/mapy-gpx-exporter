@@ -7,6 +7,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import track
 
 from .client import AsyncMapyGpxClient, MapyGpxClient
@@ -31,7 +32,9 @@ def export(
         with MapyGpxClient() as client:
             content = client.fetch_gpx(url)
     except MapyGpxError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        # Error messages can contain bracketed package extras (e.g. [frpc]);
+        # disable Rich markup so installation instructions are printed verbatim.
+        console.print(f"Error: {exc}", markup=False)
         raise typer.Exit(code=1) from exc
 
     out.write_bytes(content)
@@ -69,7 +72,9 @@ def batch(
     failures = 0
     for url, result in track(results, description="Writing files..."):
         if isinstance(result, Exception):
-            console.print(f"[red]FAILED[/red] {url}: {result}")
+            # Escape exception text so package extras such as [frpc] remain
+            # visible while the failure label retains its styling.
+            console.print(f"[red]FAILED[/red] {url}: {escape(str(result))}")
             failures += 1
             continue
         path = out_dir / f"{_slug_from_url(url)}.gpx"
