@@ -50,6 +50,13 @@ mapy-gpx = "mapy_gpx_exporter.cli:app"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.coverage.run]
+source = ["src/mapy_gpx_exporter"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
