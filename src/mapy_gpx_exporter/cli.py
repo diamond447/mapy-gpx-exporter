@@ -45,6 +45,10 @@ def batch(
     concurrency: int = typer.Option(5, "--concurrency", "-c"),
 ) -> None:
     """Export many routes concurrently to a directory."""
+    if concurrency < 1:
+        console.print("[red]Error:[/red] --concurrency must be at least 1")
+        raise typer.Exit(code=1)
+
     urls = [
         line.strip()
         for line in links_file.read_text().splitlines()
