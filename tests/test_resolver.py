@@ -73,7 +73,7 @@ def test_resolve_short_link_raises_on_bad_status_mid_chain() -> None:
     respx.get("https://mapy.com/s/two-hop").mock(
         return_value=httpx.Response(301, headers={"location": "https://mapy.com/s/hop2"})
     )
-    # druhý hop vrátí 500 s náhodně přítomnou Location hlavičkou
+    # The second hop returns 500 with an unexpectedly present Location header.
     respx.get("https://mapy.com/s/hop2").mock(
         return_value=httpx.Response(
             500, headers={"location": "https://mapy.com/en/turisticka?rc=x"}
@@ -98,7 +98,7 @@ def test_rg_chunks_handles_multiple_points() -> None:
     # Let's create a route params with 3 points.
     # We will use the same hemorusagu string but append another relative delta point to it.
     # We don't have a direct 3-point delta string on hand, but we can just use 3 absolute chunks
-    # Zajišťuje, že enkodér správně řetězí > 2 body na reálném 3-bodovém odkazu (buhadohonu)
+    # Ensure the encoder correctly chains more than two points on a real three-point link.
     route = RouteParams(
         rc="9ny0ZxU9K09nWOHxUKnx9n7cHxU0ph", rs=["muni", "coor", "coor"], ri=["1", "", ""]
     )
