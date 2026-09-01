@@ -53,6 +53,8 @@ class AsyncMapyGpxClient:
     """Async client, useful for batch-exporting many links concurrently."""
 
     def __init__(self, timeout: float = 10.0, max_concurrent: int = 5) -> None:
+        if max_concurrent < 1:
+            raise ValueError("max_concurrent must be at least 1")
         self._client = httpx.AsyncClient(headers=_DEFAULT_HEADERS, timeout=timeout)
         self._semaphore = asyncio.Semaphore(max_concurrent)
 

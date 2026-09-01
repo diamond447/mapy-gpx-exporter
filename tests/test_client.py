@@ -53,6 +53,13 @@ _DIM_REDIRECT_LOCATION = (
 )
 
 
+@pytest.mark.parametrize("max_concurrent", [0, -1])
+def test_async_client_rejects_non_positive_concurrency(max_concurrent: int) -> None:
+    """The async client rejects invalid concurrency before creating resources."""
+    with pytest.raises(ValueError, match="max_concurrent must be at least 1"):
+        AsyncMapyGpxClient(max_concurrent=max_concurrent)
+
+
 @respx.mock
 def test_sync_client_fetch_gpx_rc_link() -> None:
     """Sync client resolves an rc link and fetches GPX."""
