@@ -45,6 +45,11 @@ mapy-gpx export https://mapy.com/s/mukekodezu -o route.gpx
 mapy-gpx batch links.txt --out-dir ./gpx --concurrency 5
 ```
 
+Batch filenames are derived safely from each URL's path; query strings and
+fragments are ignored. If a filename collides with another route or an
+existing file, a deterministic suffix is added (`name-2.gpx`, `name-3.gpx`,
+and so on), so existing output is never overwritten.
+
 ## Library usage
 
 ```python
