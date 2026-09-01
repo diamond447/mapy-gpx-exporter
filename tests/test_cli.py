@@ -14,6 +14,20 @@ from mapy_gpx_exporter.exceptions import GpxExportError
 runner = CliRunner()
 
 
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://mapy.com/s/route?lang=en#details", "route.gpx"),
+        ("https://mapy.com/s/unsafe%2Fname%00", "unsafe_name_.gpx"),
+        ("https://mapy.com/s/name:with*bad|chars...", "name_with_bad_chars.gpx"),
+        ("https://mapy.com/s/CON.txt", "route.gpx"),
+        ("https://mapy.com/s/", "route.gpx"),
+    ],
+)
+def test_slug_from_url_is_safe_and_path_based(url: str, expected: str) -> None:
+    assert cli._slug_from_url(url) == expected
+
+
 class StubMapyGpxClient:
     """Offline sync client double for the single-export command tests."""
 
@@ -142,6 +156,108 @@ def test_batch_writes_successes_and_reports_partial_failure(
     assert "FAILED" in result.stdout
     assert "bad route" in result.stdout
     assert "1 succeeded, 1 failed out of 2." in result.stdout
+
+
+def test_batch_ignores_indented_comments_and_uses_deterministic_collisions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first_url = "https://mapy.com/s/route?variant=first"
+    second_url = "https://mapy.com/s/route#variant=second"
+    links_file = tmp_path / "links.txt"
+    links_file.write_text(f"  # ignored\n{first_url}\n\t# also ignored\n{second_url}\n")
+    out_dir = tmp_path / "gpx"
+    out_dir.mkdir()
+    (out_dir / "route.gpx").write_bytes(b"pre-existing")
+    responses = [(first_url, b"first"), (second_url, b"second")]
+    monkeypatch.setattr(
+        cli,
+        "AsyncMapyGpxClient",
+        lambda max_concurrent: StubAsyncMapyGpxClient(responses, max_concurrent),
+    )
+
+    result = runner.invoke(cli.app, ["batch", str(links_file), "--out-dir", str(out_dir)])
+
+    assert result.exit_code == 0
+    assert (out_dir / "route.gpx").read_bytes() == b"pre-existing"
+    assert (out_dir / "route-2.gpx").read_bytes() == b"first"
+    assert (out_dir / "route-3.gpx").read_bytes() == b"second"
+    assert "2 succeeded, 0 failed out of 2." in result.stdout
+
+
+def test_batch_reports_input_read_error_without_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    links_file = tmp_path / "links.txt"
+
+    def fail_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self == links_file:
+            raise OSError("permission denied")
+        return Path.read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_read_text)
+    result = runner.invoke(cli.app, ["batch", str(links_file)])
+
+    assert result.exit_code == 1
+    assert "Error: could not read input file" in result.stdout
+    assert str(links_file) in result.stdout
+    assert "permission denied" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_batch_reports_output_directory_error_without_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    links_file = tmp_path / "links.txt"
+    links_file.write_text("https://mapy.com/s/route\n")
+    out_dir = tmp_path / "gpx"
+    original_mkdir = Path.mkdir
+
+    def fail_mkdir(self: Path, *args: object, **kwargs: object) -> None:
+        if self == out_dir:
+            raise OSError("read-only filesystem")
+        original_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", fail_mkdir)
+    result = runner.invoke(cli.app, ["batch", str(links_file), "--out-dir", str(out_dir)])
+
+    assert result.exit_code == 1
+    assert "Error: could not create output directory" in result.stdout
+    assert str(out_dir) in result.stdout
+    assert "read-only" in result.stdout
+    assert "filesystem" in result.stdout
+    assert "Traceback" not in result.stdout
+
+
+def test_batch_continues_after_file_write_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    urls = ["https://mapy.com/s/fails", "https://mapy.com/s/succeeds"]
+    links_file = tmp_path / "links.txt"
+    links_file.write_text("\n".join(urls) + "\n")
+    out_dir = tmp_path / "gpx"
+    responses = [(urls[0], b"not saved"), (urls[1], b"saved")]
+    monkeypatch.setattr(
+        cli,
+        "AsyncMapyGpxClient",
+        lambda max_concurrent: StubAsyncMapyGpxClient(responses, max_concurrent),
+    )
+    original_write = cli._write_exclusive
+
+    def fail_one(path: Path, content: bytes) -> None:
+        if path.name == "fails.gpx":
+            raise OSError("disk full")
+        original_write(path, content)
+
+    monkeypatch.setattr(cli, "_write_exclusive", fail_one)
+
+    result = runner.invoke(cli.app, ["batch", str(links_file), "--out-dir", str(out_dir)])
+
+    assert result.exit_code == 1
+    assert not (out_dir / "fails.gpx").exists()
+    assert (out_dir / "succeeds.gpx").read_bytes() == b"saved"
+    assert "could not write" in result.stdout
+    assert "1 succeeded, 1 failed out of 2." in result.stdout
+    assert "Traceback" not in result.stdout
 
 
 @pytest.mark.parametrize("concurrency", ["0", "-1"])
