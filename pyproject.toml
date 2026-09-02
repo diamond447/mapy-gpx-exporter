@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mapy-gpx-exporter"
-version = "0.1.0"
+version = "0.1.1"
 description = "Export GPX files from mapy.com route planner share links, single or in batch."
 readme = "README.md"
 requires-python = ">=3.10"
