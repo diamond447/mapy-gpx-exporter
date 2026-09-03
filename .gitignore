@@ -10,3 +10,4 @@ gpx/
 *.gpx
 !tests/fixtures/*.gpx
 implementation_plan.md
+AGENTS.md
