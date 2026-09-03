@@ -8,6 +8,7 @@ import pytest
 import respx
 
 from mapy_gpx_exporter.client import AsyncMapyGpxClient, MapyGpxClient
+from mapy_gpx_exporter.decoder import encode_mapy_geometry
 from mapy_gpx_exporter.exceptions import MissingOptionalDependencyError
 
 # Real Location header captured from mapy.com (mukekodezu).
@@ -55,6 +56,36 @@ _DIM_REDIRECT_LOCATION = (
     "https://mapy.com/en/turisticka?planovani-trasy&dim=123456789012345678901234"
 )
 
+_PLACE_URL = "https://mapy.com/en/zakladni?source=base&id=2139764&x=15.6340364&y=49.5820419&z=9"
+_PLACE_RESPONSE = bytes(
+    pyfrpc.encode(
+        pyfrpc.FrpcResponse(
+            [{"poi": {"title": "Actual place", "mark": {"lat": 49.774, "lon": 15.745}}}]
+        ),
+        version=0x0201,
+    )
+)
+_PLACE_GEOMETRY_SEGMENTS = [
+    "".join(encode_mapy_geometry([(49.0, 15.0), (49.1, 15.1)])),
+    "".join(encode_mapy_geometry([(50.0, 16.0), (50.1, 16.1)])),
+]
+_PLACE_GEOMETRY_RESPONSE = bytes(
+    pyfrpc.encode(
+        pyfrpc.FrpcResponse(
+            [
+                {
+                    "poi": {
+                        "title": "Cycle route",
+                        "mark": {"lat": 49.5, "lon": 15.5},
+                        "geom": {"type": "multilinestring", "data": _PLACE_GEOMETRY_SEGMENTS},
+                    }
+                }
+            ]
+        ),
+        version=0x0201,
+    )
+)
+
 
 @pytest.mark.parametrize("max_concurrent", [0, -1])
 def test_async_client_rejects_non_positive_concurrency(max_concurrent: int) -> None:
@@ -81,6 +112,40 @@ def test_sync_client_fetch_gpx_rc_link() -> None:
         gpx = client.fetch_gpx("https://mapy.com/s/mukekodezu")
 
     assert gpx.startswith(b"<?xml")
+
+
+@respx.mock
+def test_sync_client_fetch_gpx_map_place_is_local() -> None:
+    place_call = respx.post("https://mapy.com/api/poiagg").mock(
+        return_value=httpx.Response(200, content=_PLACE_RESPONSE)
+    )
+
+    with MapyGpxClient() as client:
+        gpx = client.fetch_gpx(_PLACE_URL)
+
+    assert b'<wpt lat="49.774" lon="15.745">' in gpx
+    assert b"<name>Actual place</name>" in gpx
+    assert place_call.called
+    assert len(respx.calls) == 1
+
+
+@respx.mock
+def test_sync_client_fetch_gpx_map_place_uses_geometry_segments_and_language() -> None:
+    place_call = respx.post("https://mapy.com/api/poiagg").mock(
+        return_value=httpx.Response(200, content=_PLACE_GEOMETRY_RESPONSE)
+    )
+
+    with MapyGpxClient() as client:
+        gpx = client.fetch_gpx(_PLACE_URL, lang="cs")
+
+    assert b"<trk>" in gpx
+    assert gpx.count(b"<trkseg>") == 2
+    assert b'lat="49.' in gpx and b'lon="15.' in gpx
+    assert b'lat="50.' in gpx and b'lon="16.' in gpx
+    assert b"<ele>" not in gpx
+    call = pyfrpc.decode(place_call.calls.last.request.content)
+    assert call.args[2]["lang"] == ["cs"]
+    assert len(respx.calls) == 1
 
 
 @respx.mock
@@ -141,6 +206,22 @@ async def test_async_client_fetch_gpx_rc_link() -> None:
     request = export_route.calls.last.request
     assert "name=export" in str(request.url)
     assert "title=export" in str(request.url)
+
+
+@pytest.mark.anyio
+@respx.mock
+async def test_async_client_fetch_gpx_map_place_is_local() -> None:
+    place_call = respx.post("https://mapy.com/api/poiagg").mock(
+        return_value=httpx.Response(200, content=_PLACE_RESPONSE)
+    )
+
+    async with AsyncMapyGpxClient() as client:
+        gpx = await client.fetch_gpx(_PLACE_URL)
+
+    assert b'<wpt lat="49.774" lon="15.745">' in gpx
+    assert b"<name>Actual place</name>" in gpx
+    assert place_call.called
+    assert len(respx.calls) == 1
 
 
 @pytest.mark.anyio

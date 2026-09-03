@@ -80,7 +80,7 @@ def _write_exclusive(path: Path, content: bytes) -> None:
 
 @app.command()
 def export(
-    url: str = typer.Argument(..., help="A mapy.com/s/{id} share link."),
+    url: str = typer.Argument(..., help="A Mapy.com route or source=base place link."),
     out: Path = typer.Option(None, "--out", "-o", help="Output .gpx file path."),
 ) -> None:
     """Export a single route to a GPX file."""

@@ -2,8 +2,8 @@
 
 Mapy.com serves a plain HTTP 301 redirect for short links; the full route
 state (waypoint geometry, routing profile, ...) is embedded in the
-``Location`` header's query string. No JavaScript execution or additional
-API calls are required.
+``Location`` header's query string. Place links are resolved through Mapy.com's
+public POI endpoint; no JavaScript execution is required.
 """
 
 from __future__ import annotations
@@ -15,8 +15,63 @@ import httpx
 
 from .exceptions import ShortLinkResolutionError
 from .models import RouteParams
+from .place_resolver import async_resolve_map_place, resolve_map_place
 
 _REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+_MAPY_BASE_HOSTS = {"mapy.com", "mapy.cz"}
+
+
+def _validate_mapy_url(location: str) -> None:
+    parsed = urlparse(location)
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    host_parts = hostname.split(".")
+    is_base_host = hostname in _MAPY_BASE_HOSTS
+    is_localized_host = (
+        len(host_parts) == 3
+        and host_parts[1] == "mapy"
+        and host_parts[2] in {"com", "cz"}
+        and (host_parts[0] == "www" or len(host_parts[0]) == 2 and host_parts[0].isalpha())
+    )
+    if parsed.scheme != "https" or not (is_base_host or is_localized_host):
+        raise ShortLinkResolutionError(
+            f"Only HTTPS Mapy.com/Mapy.cz URLs are supported: {location}"
+        )
+
+
+def _query_value(pairs: list[tuple[str, str]], key: str) -> str | None:
+    return next((value for name, value in pairs if name == key), None)
+
+
+def _is_map_place_url(location: str) -> bool:
+    pairs = parse_qsl(urlparse(location).query, keep_blank_values=True)
+    return _query_value(pairs, "source") == "base"
+
+
+def _is_route_target(location: str) -> bool:
+    pairs = parse_qsl(urlparse(location).query, keep_blank_values=True)
+    return any(name in {"rc", "dim"} for name, _ in pairs) or _is_map_place_url(location)
+
+
+def parse_map_place_url(location: str) -> RouteParams:
+    """Parse a Mapy.com place URL into a locally-exported GPX waypoint.
+
+    Place links (for example ``/en/zakladni?source=base&id=...&x=...&y=...``)
+    identify the object in their query string. The viewport ``x``/``y`` values
+    are deliberately ignored; the resolver fetches the object's canonical
+    position from Mapy.com's public POI endpoint.
+    """
+    _validate_mapy_url(location)
+    pairs = parse_qsl(urlparse(location).query, keep_blank_values=True)
+    place_id = _query_value(pairs, "id")
+
+    if not place_id:
+        raise ShortLinkResolutionError(f"Map place URL is missing its id parameter: {location}")
+
+    return RouteParams(
+        resolution_method="local_waypoint",
+        title=place_id,
+        place_id=place_id,
+    )
 
 
 def _parse_profile_code(pairs: list[tuple[str, str]]) -> int:
@@ -39,29 +94,32 @@ def parse_route_from_location(location: str) -> RouteParams:
     Pure function, no I/O — used by both the sync and async resolvers so
     the parsing logic (and its tests) only exist once.
     """
+    _validate_mapy_url(location)
     parsed = urlparse(location)
     pairs = parse_qsl(parsed.query, keep_blank_values=True)
 
-    rc = next((v for k, v in pairs if k == "rc"), "")
-    dim = next((v for k, v in pairs if k == "dim"), None)
-
-    if not rc and not dim:
-        raise ShortLinkResolutionError(
-            f"Redirect target has no 'rc' or 'dim' route parameter: {location}"
-        )
+    rc = _query_value(pairs, "rc") or ""
+    dim = _query_value(pairs, "dim")
 
     if dim:
         # We return a RouteParams with dim_id set.
         # This keeps `parse_route_from_location` pure.
         return RouteParams(dim_id=dim, profile_code=_parse_profile_code(pairs))
 
-    rs = [v for k, v in pairs if k == "rs"]
-    ri = [v for k, v in pairs if k == "ri"]
+    if rc:
+        rs = [v for k, v in pairs if k == "rs"]
+        ri = [v for k, v in pairs if k == "ri"]
+        return RouteParams(rc=rc, rs=rs, ri=ri, profile_code=_parse_profile_code(pairs))
 
-    return RouteParams(rc=rc, rs=rs, ri=ri, profile_code=_parse_profile_code(pairs))
+    if _is_map_place_url(location):
+        return parse_map_place_url(location)
+
+    raise ShortLinkResolutionError(
+        f"Redirect target has no 'rc', 'dim', or supported place parameters: {location}"
+    )
 
 
-def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
+def resolve_short_link(client: httpx.Client, short_url: str, lang: str = "en") -> RouteParams:
     """Resolve a ``https://mapy.com/s/{id}`` link into :class:`RouteParams`.
 
     Args:
@@ -76,19 +134,23 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
         :func:`mapy_gpx_exporter.exporter.export_gpx`.
 
     Raises:
-        MissingOptionalDependencyError: If the link is a saved route and pyfrpc
-            is not installed.
+        MissingOptionalDependencyError: If the link needs FRPC support and
+            pyfrpc is not installed.
         ShortLinkResolutionError: If the link doesn't redirect as expected,
             or the redirect target is missing required route parameters.
     """
+    _validate_mapy_url(short_url)
+
     # If the user pasted a long link directly, it might already contain the parameters.
     # Long links return 200 OK because they are the actual SPA HTML page.
-    if "dim=" in short_url or "rc=" in short_url:
+    if _is_route_target(short_url):
         params = parse_route_from_location(short_url)
         if params.dim_id:
             from .frpc_resolver import resolve_dim_link
 
             return resolve_dim_link(client, short_url, dim_id=params.dim_id)
+        if params.place_id:
+            return resolve_map_place(client, short_url, params.place_id, lang=lang)
         return params
 
     try:
@@ -102,10 +164,12 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
         )
 
     location = response.headers.get("location")
+    if location:
+        _validate_mapy_url(location)
 
     # Follow redirects until we get the actual route parameters or hit a max limit
     redirects = 0
-    while location and ("rc=" not in location and "dim=" not in location) and redirects < 5:
+    while location and not _is_route_target(location) and redirects < 5:
         try:
             response = client.get(location, follow_redirects=False)
         except httpx.HTTPError as exc:
@@ -117,6 +181,8 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
             )
 
         location = response.headers.get("location")
+        if location:
+            _validate_mapy_url(location)
         redirects += 1
 
     if not location:
@@ -130,25 +196,33 @@ def resolve_short_link(client: httpx.Client, short_url: str) -> RouteParams:
         from .frpc_resolver import resolve_dim_link
 
         return resolve_dim_link(client, location, dim_id=params.dim_id)
+    if params.place_id:
+        return resolve_map_place(client, location, params.place_id, lang=lang)
 
     return params
 
 
-async def async_resolve_short_link(client: httpx.AsyncClient, short_url: str) -> RouteParams:
+async def async_resolve_short_link(
+    client: httpx.AsyncClient, short_url: str, lang: str = "en"
+) -> RouteParams:
     """Async equivalent of resolve_short_link.
 
     Raises:
-        MissingOptionalDependencyError: If the link is a saved route and pyfrpc
-            is not installed.
+        MissingOptionalDependencyError: If the link needs FRPC support and
+            pyfrpc is not installed.
         ShortLinkResolutionError: If the link doesn't redirect as expected,
             or the redirect target is missing required route parameters.
     """
-    if "dim=" in short_url or "rc=" in short_url:
+    _validate_mapy_url(short_url)
+
+    if _is_route_target(short_url):
         params = parse_route_from_location(short_url)
         if params.dim_id:
             from .frpc_resolver import async_resolve_dim_link
 
             return await async_resolve_dim_link(client, short_url, dim_id=params.dim_id)
+        if params.place_id:
+            return await async_resolve_map_place(client, short_url, params.place_id, lang=lang)
         return params
 
     try:
@@ -162,9 +236,11 @@ async def async_resolve_short_link(client: httpx.AsyncClient, short_url: str) ->
         )
 
     location = response.headers.get("location")
+    if location:
+        _validate_mapy_url(location)
 
     redirects = 0
-    while location and ("rc=" not in location and "dim=" not in location) and redirects < 5:
+    while location and not _is_route_target(location) and redirects < 5:
         try:
             response = await client.get(location, follow_redirects=False)
         except httpx.HTTPError as exc:
@@ -176,6 +252,8 @@ async def async_resolve_short_link(client: httpx.AsyncClient, short_url: str) ->
             )
 
         location = response.headers.get("location")
+        if location:
+            _validate_mapy_url(location)
         redirects += 1
 
     if not location:
@@ -189,5 +267,7 @@ async def async_resolve_short_link(client: httpx.AsyncClient, short_url: str) ->
         from .frpc_resolver import async_resolve_dim_link
 
         return await async_resolve_dim_link(client, location, dim_id=params.dim_id)
+    if params.place_id:
+        return await async_resolve_map_place(client, location, params.place_id, lang=lang)
 
     return params

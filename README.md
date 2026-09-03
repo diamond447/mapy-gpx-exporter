@@ -1,9 +1,8 @@
 # mapy-gpx-exporter
 [![CI](https://github.com/diamond447/mapy-gpx-exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/diamond447/mapy-gpx-exporter/actions/workflows/ci.yml)
 
-Export GPX files from [Mapy.com](https://mapy.com) route planner share
-links (`mapy.com/s/{id}`) — one link or a whole batch, from the command
-line or as a Python library.
+Export GPX files from [Mapy.com](https://mapy.com) route and place links — one
+link or a whole batch, from the command line or as a Python library.
 
 ## Why
 
@@ -14,10 +13,15 @@ and wraps them in a clean, typed, tested client.
 
 ## How it works
 
-1. **Anonymous Routes**: `GET https://mapy.com/s/{id}` — Mapy.com replies with a plain **HTTP
+1. **Map Places**: Links such as `https://mapy.com/en/zakladni?source=base&id=...` are resolved
+   through Mapy.com's public POI endpoint. The endpoint supplies the place's canonical position
+   (the `x`/`y` query parameters are only viewport coordinates). Object line geometry is decoded
+   into a local GPX track with its segments preserved; objects without line geometry become a
+   GPX waypoint.
+2. **Anonymous Routes**: `GET https://mapy.com/s/{id}` — Mapy.com replies with a plain **HTTP
    301** redirect; the full route state (waypoint geometry, routing
    profile) is embedded in the `Location` header's query string. We decode the proprietary `rc` parameter string and re-encode it as absolute chunks to `GET https://mapy.com/api/tplannerexport`, which returns the GPX file.
-2. **Saved Routes (dim links)**: If the link is a saved route, the geometry is stored server-side. We use `pyfrpc` to simulate Mapy.cz's FastRPC routing API (`https://mapy.com/api/mapybox-ng/`), locally decode the proprietary 5-bit delta-encoded geometry, interpolate elevations, and manually construct the GPX file locally.
+3. **Saved Routes (dim links)**: If the link is a saved route, the geometry is stored server-side. We use `pyfrpc` to simulate Mapy.cz's FastRPC routing API (`https://mapy.com/api/mapybox-ng/`), locally decode the proprietary 5-bit delta-encoded geometry, interpolate elevations, and manually construct the GPX file locally.
 
 This is an unofficial client built against publicly observable network
 behavior, not a documented or officially supported API. It does not
@@ -40,11 +44,16 @@ Saved routes (dim links) require the optional FRPC support:
 uv pip install "mapy-gpx-exporter[frpc]"
 ```
 
+Map places also require the optional FRPC support because Mapy.com's POI endpoint uses FastRPC.
+
 ## CLI usage
 
 ```bash
 # single route
 mapy-gpx export https://mapy.com/s/mukekodezu -o route.gpx
+
+# single map place (decodes its object geometry locally)
+mapy-gpx export 'https://mapy.com/en/zakladni?source=base&id=2139764&x=15.6340364&y=49.5820419&z=9' -o place.gpx
 
 # batch: one link per line in links.txt
 mapy-gpx batch links.txt --out-dir ./gpx --concurrency 5
@@ -98,6 +107,9 @@ asyncio.run(main())
 ## Limitations
 
 - Only tested against the "planned route" (`turisticka`/planner) and activity traces.
+- `source=base` object links are resolved through Mapy.com's public POI endpoint. Their line
+  geometry is exported as a track; objects without line geometry are exported as waypoints.
+- Route and object links require the optional FRPC support when Mapy.com returns FastRPC data.
 - No authentication support — routes that require a logged-in session and are strictly private won't export.
 - This relies on an undocumented, unofficial endpoint and reverse-engineered formats. Mapy.com can
   change it at any time without notice.

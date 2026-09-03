@@ -290,7 +290,7 @@ def test_export_dim_url_reports_missing_pyfrpc_without_traceback(
     )
 
     assert result.exit_code == 1
-    assert "Saved routes require the optional FRPC dependency" in result.stdout
+    assert "Saved routes and map places require the optional FRPC dependency" in result.stdout
     assert 'uv pip install "mapy-gpx-exporter[frpc]"' in result.stdout
     assert 'pip install "mapy-gpx-exporter[frpc]"' in result.stdout
     assert "Traceback" not in result.stdout
