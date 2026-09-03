@@ -16,7 +16,9 @@ class RouteParams:
     execution required).
     """
 
-    resolution_method: Literal["tplannerexport", "local_decode"] = "tplannerexport"
+    resolution_method: Literal["tplannerexport", "local_decode", "local_waypoint"] = (
+        "tplannerexport"
+    )
     """Which method should be used to export the GPX file."""
 
     title: str = ""
@@ -46,6 +48,12 @@ class RouteParams:
     dim_id: str | None = None
     """Document ID for 'dim' (saved route) links. If present, the route
     must be resolved via FRPC."""
+
+    place_id: str | None = None
+    """Object ID for a ``source=base`` place link, resolved via POI FRPC."""
+
+    geometry_segments: list[list[tuple[float, float]]] = field(default_factory=list)
+    """2D decoded geometry grouped into source segments, when boundaries matter."""
 
     def rg_chunks(self) -> list[str]:
         """Split ``rc`` back into one absolute geometry code per waypoint.

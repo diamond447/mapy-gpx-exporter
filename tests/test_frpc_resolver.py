@@ -74,7 +74,7 @@ def test_resolve_dim_link_missing_pyfrpc_does_not_make_request(
             )
 
     assert str(exc_info.value) == (
-        "Saved routes require the optional FRPC dependency. Install it with:\n"
+        "Saved routes and map places require the optional FRPC dependency. Install it with:\n"
         'uv pip install "mapy-gpx-exporter[frpc]"\n\n'
         "Alternatively, use pip:\n"
         'pip install "mapy-gpx-exporter[frpc]"'

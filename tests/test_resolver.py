@@ -1,10 +1,18 @@
+import sys
+
 import httpx
+import pyfrpc  # type: ignore[import-untyped]
 import pytest
 import respx
 
-from mapy_gpx_exporter.exceptions import ShortLinkResolutionError
+from mapy_gpx_exporter.exceptions import MissingOptionalDependencyError, ShortLinkResolutionError
 from mapy_gpx_exporter.models import RouteParams
-from mapy_gpx_exporter.resolver import parse_route_from_location, resolve_short_link
+from mapy_gpx_exporter.resolver import (
+    async_resolve_short_link,
+    parse_map_place_url,
+    parse_route_from_location,
+    resolve_short_link,
+)
 
 # Real Location header captured from mapy.com's own redirect (see README
 # for reverse-engineering notes). Query-encoded, exactly as observed.
@@ -18,6 +26,107 @@ REAL_LOCATION = (
     "&rwp=1%3B9m8fHxUae4kJPe4oi4EeCO9mixqdklmiO3XRlkLbiygdQ17Ug1qxU0hefjy1Cihsba8Z"
     "&rut=1&x=11.3817622&y=48.5563849&z=7"
 )
+
+PLACE_URL = "https://mapy.com/en/zakladni?source=base&id=2139764&x=15.6340364&y=49.5820419&z=9"
+
+
+def test_parse_map_place_url_creates_local_waypoint() -> None:
+    route = parse_map_place_url(PLACE_URL)
+
+    assert route.resolution_method == "local_waypoint"
+    assert route.title == "2139764"
+    assert route.place_id == "2139764"
+    assert route.geometry_points == []
+
+
+def test_parse_route_from_location_accepts_map_place_url() -> None:
+    route = parse_route_from_location(PLACE_URL)
+
+    assert route.resolution_method == "local_waypoint"
+
+
+@pytest.mark.anyio
+@respx.mock
+async def test_async_resolve_map_place_url_is_local() -> None:
+    payload = bytes(
+        pyfrpc.encode(
+            pyfrpc.FrpcResponse(
+                [{"poi": {"title": "Actual place", "mark": {"lat": 49.774, "lon": 15.745}}}]
+            ),
+            version=0x0201,
+        )
+    )
+    respx.post("https://mapy.com/api/poiagg").mock(
+        return_value=httpx.Response(200, content=payload)
+    )
+
+    async with httpx.AsyncClient() as client:
+        route = await async_resolve_short_link(client, PLACE_URL)
+
+    assert route.resolution_method == "local_waypoint"
+    assert route.title == "Actual place"
+    assert route.geometry_points[0][:2] == (49.774, 15.745)
+
+
+def test_parse_map_place_url_rejects_non_mapy_origin() -> None:
+    with pytest.raises(ShortLinkResolutionError, match="Only HTTPS Mapy"):
+        parse_map_place_url("https://example.com/en/zakladni?source=base&id=2139764")
+
+
+def test_parse_map_place_url_requires_id() -> None:
+    with pytest.raises(ShortLinkResolutionError, match="missing its id"):
+        parse_map_place_url("https://mapy.com/en/zakladni?source=base&x=15&y=49")
+
+
+def test_parse_route_from_location_rejects_http_url() -> None:
+    with pytest.raises(ShortLinkResolutionError, match="Only HTTPS Mapy"):
+        parse_route_from_location("http://mapy.com/en/turisticka?rc=abc")
+
+
+def test_parse_route_from_location_allows_localized_mapy_subdomain() -> None:
+    route = parse_route_from_location("https://en.mapy.com/en/turisticka?rc=abc")
+
+    assert route.rc == "abc"
+
+
+def test_route_params_preserves_legacy_positional_fields() -> None:
+    route = RouteParams("tplannerexport", "title", [], "rc", None, ["rs"], ["ri"], 132, "dim")
+
+    assert route.rc == "rc"
+    assert route.dim_id == "dim"
+    assert route.place_id is None
+
+
+def test_parse_route_from_location_rejects_lookalike_host() -> None:
+    with pytest.raises(ShortLinkResolutionError, match="Only HTTPS Mapy"):
+        parse_route_from_location("https://mapy.com.example.org/en/turisticka?rc=abc")
+
+
+def test_parse_route_from_location_rejects_unrecognized_subdomain() -> None:
+    with pytest.raises(ShortLinkResolutionError, match="Only HTTPS Mapy"):
+        parse_route_from_location("https://maps.mapy.com/en/turisticka?rc=abc")
+
+
+def test_map_place_reports_frpc_requirement(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "pyfrpc", None)
+
+    with httpx.Client() as client:
+        with pytest.raises(
+            MissingOptionalDependencyError,
+            match="Saved routes and map places require the optional FRPC dependency",
+        ):
+            resolve_short_link(client, PLACE_URL)
+
+    assert not respx.calls
+
+
+def test_parse_route_prefers_rc_over_source_base() -> None:
+    route = parse_route_from_location(
+        "https://mapy.com/en/turisticka?source=base&id=2139764&rc=abc"
+    )
+
+    assert route.rc == "abc"
+    assert route.place_id is None
 
 
 def test_parse_route_from_location_extracts_all_fields() -> None:

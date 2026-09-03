@@ -44,8 +44,8 @@ def build_export_params(
 def build_local_gpx(route: RouteParams) -> bytes:
     """Generate GPX XML bytes from locally-decoded geometry points.
 
-    Used for ``dim`` links whose geometry was resolved via FRPC and
-    decoded locally rather than via the ``tplannerexport`` endpoint.
+    Used for ``dim`` and ``source=base`` links whose data was resolved via
+    FRPC and exported locally rather than via the ``tplannerexport`` endpoint.
     """
     gpx = ET.Element(
         "gpx",
@@ -56,21 +56,36 @@ def build_local_gpx(route: RouteParams) -> bytes:
         },
     )
 
+    if route.resolution_method == "local_waypoint":
+        for pt in route.geometry_points:
+            lat, lon = pt[0], pt[1]
+            wpt = ET.SubElement(gpx, "wpt", {"lat": str(lat), "lon": str(lon)})
+            if route.title:
+                name = ET.SubElement(wpt, "name")
+                name.text = route.title
+        rough_string = ET.tostring(gpx, "utf-8")
+        reparsed = minidom.parseString(rough_string)
+        return reparsed.toprettyxml(indent="  ", encoding="utf-8")
+
     trk = ET.SubElement(gpx, "trk")
     if route.title:
         name = ET.SubElement(trk, "name")
         name.text = route.title
 
-    trkseg = ET.SubElement(trk, "trkseg")
-
-    for pt in route.geometry_points:
-        lat, lon = pt[0], pt[1]
-        trkpt = ET.SubElement(
-            trkseg,
-            "trkpt",
-            {"lat": str(lat), "lon": str(lon)},
-        )
-        if len(pt) >= 3:
+    if route.geometry_segments:
+        for segment in route.geometry_segments:
+            trkseg = ET.SubElement(trk, "trkseg")
+            for lat, lon in segment:
+                ET.SubElement(trkseg, "trkpt", {"lat": str(lat), "lon": str(lon)})
+    elif route.geometry_points:
+        trkseg = ET.SubElement(trk, "trkseg")
+        for pt in route.geometry_points:
+            lat, lon = pt[0], pt[1]
+            trkpt = ET.SubElement(
+                trkseg,
+                "trkpt",
+                {"lat": str(lat), "lon": str(lon)},
+            )
             ele = ET.SubElement(trkpt, "ele")
             ele.text = f"{pt[2]:.1f}"
 
@@ -110,7 +125,7 @@ def export_gpx(client: httpx.Client, route: RouteParams, lang: str = "en") -> by
         GpxExportError: On network failure, non-2xx response, or a
             response that doesn't look like GPX/XML.
     """
-    if route.resolution_method == "local_decode":
+    if route.resolution_method in {"local_decode", "local_waypoint"}:
         return build_local_gpx(route)
 
     params = build_export_params(route, lang=lang)
@@ -129,7 +144,7 @@ async def async_export_gpx(
     client: httpx.AsyncClient, route: RouteParams, lang: str = "en"
 ) -> bytes:
     """Async equivalent of export_gpx — same validation logic, async client."""
-    if route.resolution_method == "local_decode":
+    if route.resolution_method in {"local_decode", "local_waypoint"}:
         return build_local_gpx(route)
 
     params = build_export_params(route, lang=lang)
