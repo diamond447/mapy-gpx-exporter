@@ -6,6 +6,8 @@ import warnings
 from dataclasses import dataclass, field
 from typing import Literal
 
+GeometryPoint = tuple[float, float] | tuple[float, float, float]
+
 
 @dataclass(frozen=True)
 class RouteParams:
@@ -52,8 +54,12 @@ class RouteParams:
     place_id: str | None = None
     """Object ID for a ``source=base`` place link, resolved via POI FRPC."""
 
-    geometry_segments: list[list[tuple[float, float]]] = field(default_factory=list)
-    """2D decoded geometry grouped into source segments, when boundaries matter."""
+    geometry_segments: list[list[GeometryPoint]] = field(default_factory=list)
+    """Decoded geometry grouped into source segments, when boundaries matter.
+
+    Points contain ``(lat, lon)`` when no elevation profile is available and
+    ``(lat, lon, ele)`` when the profile was resolved successfully.
+    """
 
     def rg_chunks(self) -> list[str]:
         """Split ``rc`` back into one absolute geometry code per waypoint.

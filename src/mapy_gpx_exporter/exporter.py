@@ -75,8 +75,12 @@ def build_local_gpx(route: RouteParams) -> bytes:
     if route.geometry_segments:
         for segment in route.geometry_segments:
             trkseg = ET.SubElement(trk, "trkseg")
-            for lat, lon in segment:
-                ET.SubElement(trkseg, "trkpt", {"lat": str(lat), "lon": str(lon)})
+            for point in segment:
+                lat, lon = point[0], point[1]
+                trkpt = ET.SubElement(trkseg, "trkpt", {"lat": str(lat), "lon": str(lon)})
+                if len(point) >= 3:
+                    ele = ET.SubElement(trkpt, "ele")
+                    ele.text = f"{point[2]:.1f}"
     elif route.geometry_points:
         trkseg = ET.SubElement(trk, "trkseg")
         for pt in route.geometry_points:
