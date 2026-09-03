@@ -85,6 +85,47 @@ _PLACE_GEOMETRY_RESPONSE = bytes(
         version=0x0201,
     )
 )
+_PLACE_ALTITUDE_RESPONSE_1 = bytes(
+    pyfrpc.encode(
+        pyfrpc.FrpcResponse(
+            [
+                {
+                    "altitude": {
+                        "data": [
+                            {"alt": 100.0, "dist": 0.0, "lat": 49.0, "lon": 15.0},
+                            {
+                                "alt": 200.0,
+                                "dist": 13294.881,
+                                "lat": 49.1,
+                                "lon": 15.1,
+                            },
+                        ],
+                        "length": 13294.881,
+                    }
+                }
+            ]
+        ),
+        version=0x0201,
+    )
+)
+_PLACE_ALTITUDE_RESPONSE_2 = bytes(
+    pyfrpc.encode(
+        pyfrpc.FrpcResponse(
+            [
+                {
+                    "altitude": {
+                        "data": [
+                            {"alt": 300.0, "dist": 0.0, "lat": 50.0, "lon": 16.0},
+                            {"alt": 400.0, "dist": 13294.881, "lat": 50.1, "lon": 16.1},
+                        ],
+                        "length": 13294.881,
+                    }
+                }
+            ]
+        ),
+        version=0x0201,
+    )
+)
 
 
 @pytest.mark.parametrize("max_concurrent", [0, -1])
@@ -134,18 +175,77 @@ def test_sync_client_fetch_gpx_map_place_uses_geometry_segments_and_language() -
     place_call = respx.post("https://mapy.com/api/poiagg").mock(
         return_value=httpx.Response(200, content=_PLACE_GEOMETRY_RESPONSE)
     )
+    altitude_call = respx.post("https://mapy.com/api/altitude").mock(
+        side_effect=[
+            httpx.Response(200, content=_PLACE_ALTITUDE_RESPONSE_1),
+            httpx.Response(200, content=_PLACE_ALTITUDE_RESPONSE_2),
+        ]
+    )
 
     with MapyGpxClient() as client:
-        gpx = client.fetch_gpx(_PLACE_URL, lang="cs")
+        route = client.resolve(_PLACE_URL, lang="cs")
+        gpx = client.export(route, lang="cs")
 
     assert b"<trk>" in gpx
     assert gpx.count(b"<trkseg>") == 2
     assert b'lat="49.' in gpx and b'lon="15.' in gpx
     assert b'lat="50.' in gpx and b'lon="16.' in gpx
-    assert b"<ele>" not in gpx
+    assert b"<ele>" in gpx
+    assert len(route.geometry_segments) == 2
+    assert len(route.geometry_segments[0][0]) == 3
+    assert len(route.geometry_segments[1][0]) == 3
+    assert route.geometry_segments[0][0][:2] == pytest.approx((49.0, 15.0))
+    assert route.geometry_segments[1][0][:2] == pytest.approx((50.0, 16.0))
+    assert route.geometry_segments[0][0][2] == pytest.approx(100.0)
+    assert route.geometry_segments[1][0][2] == pytest.approx(300.0)
     call = pyfrpc.decode(place_call.calls.last.request.content)
     assert call.args[2]["lang"] == ["cs"]
-    assert len(respx.calls) == 1
+    altitude_request = pyfrpc.decode(altitude_call.calls.last.request.content)
+    assert altitude_request.name == "profile"
+    assert altitude_request.args[1] == {"count": 100}
+    assert len(respx.calls) == 3
+
+
+@respx.mock
+def test_sync_client_map_place_omits_elevation_when_profile_unavailable() -> None:
+    respx.post("https://mapy.com/api/poiagg").mock(
+        return_value=httpx.Response(200, content=_PLACE_GEOMETRY_RESPONSE)
+    )
+    respx.post("https://mapy.com/api/altitude").mock(
+        side_effect=[
+            httpx.Response(503),
+            httpx.Response(503),
+        ]
+    )
+
+    with MapyGpxClient() as client:
+        gpx = client.fetch_gpx(_PLACE_URL)
+
+    assert b"<trk>" in gpx
+    assert b"<ele>" not in gpx
+
+
+@respx.mock
+def test_sync_client_map_place_falls_back_per_segment() -> None:
+    respx.post("https://mapy.com/api/poiagg").mock(
+        return_value=httpx.Response(200, content=_PLACE_GEOMETRY_RESPONSE)
+    )
+    altitude_call = respx.post("https://mapy.com/api/altitude").mock(
+        side_effect=[
+            httpx.Response(200, content=_PLACE_ALTITUDE_RESPONSE_1),
+            httpx.Response(503),
+        ]
+    )
+
+    with MapyGpxClient() as client:
+        route = client.resolve(_PLACE_URL)
+        gpx = client.export(route)
+
+    assert len(altitude_call.calls) == 2
+    assert all(len(point) == 3 for point in route.geometry_segments[0])
+    assert all(len(point) == 2 for point in route.geometry_segments[1])
+    assert route.geometry_segments[1][0][:2] == pytest.approx((50.0, 16.0))
+    assert gpx.count(b"<ele>") == 2
 
 
 @respx.mock
@@ -222,6 +322,28 @@ async def test_async_client_fetch_gpx_map_place_is_local() -> None:
     assert b"<name>Actual place</name>" in gpx
     assert place_call.called
     assert len(respx.calls) == 1
+
+
+@pytest.mark.anyio
+@respx.mock
+async def test_async_client_fetch_gpx_map_place_adds_elevation() -> None:
+    respx.post("https://mapy.com/api/poiagg").mock(
+        return_value=httpx.Response(200, content=_PLACE_GEOMETRY_RESPONSE)
+    )
+    altitude_call = respx.post("https://mapy.com/api/altitude").mock(
+        side_effect=[
+            httpx.Response(200, content=_PLACE_ALTITUDE_RESPONSE_1),
+            httpx.Response(200, content=_PLACE_ALTITUDE_RESPONSE_2),
+        ]
+    )
+
+    async with AsyncMapyGpxClient() as client:
+        gpx = await client.fetch_gpx(_PLACE_URL)
+
+    assert b"<trk>" in gpx
+    assert gpx.count(b"<ele>") == 4
+    assert altitude_call.called
+    assert len(altitude_call.calls) == 2
 
 
 @pytest.mark.anyio

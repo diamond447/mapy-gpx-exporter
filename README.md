@@ -16,8 +16,9 @@ and wraps them in a clean, typed, tested client.
 1. **Map Places**: Links such as `https://mapy.com/en/zakladni?source=base&id=...` are resolved
    through Mapy.com's public POI endpoint. The endpoint supplies the place's canonical position
    (the `x`/`y` query parameters are only viewport coordinates). Object line geometry is decoded
-   into a local GPX track with its segments preserved; objects without line geometry become a
-   GPX waypoint.
+   into a local GPX track with its segments preserved. When the separate Mapy elevation profile
+   endpoint returns a validated profile, elevations are interpolated onto the track points;
+   otherwise the track remains 2D. Objects without line geometry become a GPX waypoint.
 2. **Anonymous Routes**: `GET https://mapy.com/s/{id}` — Mapy.com replies with a plain **HTTP
    301** redirect; the full route state (waypoint geometry, routing
    profile) is embedded in the `Location` header's query string. We decode the proprietary `rc` parameter string and re-encode it as absolute chunks to `GET https://mapy.com/api/tplannerexport`, which returns the GPX file.
@@ -107,8 +108,9 @@ asyncio.run(main())
 ## Limitations
 
 - Only tested against the "planned route" (`turisticka`/planner) and activity traces.
-- `source=base` object links are resolved through Mapy.com's public POI endpoint. Their line
-  geometry is exported as a track; objects without line geometry are exported as waypoints.
+- `source=base` object links are resolved through Mapy.com's public POI and elevation-profile
+  endpoints. Their line geometry is exported as a track with elevations when the profile is
+  available and validated; objects without line geometry are exported as waypoints.
 - Route and object links require the optional FRPC support when Mapy.com returns FastRPC data.
 - No authentication support — routes that require a logged-in session and are strictly private won't export.
 - This relies on an undocumented, unofficial endpoint and reverse-engineered formats. Mapy.com can
