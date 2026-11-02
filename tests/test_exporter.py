@@ -3,7 +3,7 @@ import pytest
 import respx
 
 from mapy_gpx_exporter.exceptions import GpxExportError
-from mapy_gpx_exporter.exporter import export_gpx
+from mapy_gpx_exporter.exporter import build_local_gpx, export_gpx
 from mapy_gpx_exporter.models import RouteParams
 
 SAMPLE_GPX = b'<?xml version="1.0"?><gpx version="1.1"></gpx>'
@@ -54,3 +54,17 @@ def test_export_gpx_raises_on_unexpected_content_type() -> None:
     with httpx.Client() as client:
         with pytest.raises(GpxExportError):
             export_gpx(client, ROUTE)
+
+
+@pytest.mark.parametrize("method", ["local_waypoint", "local_decode"])
+def test_build_local_gpx_strips_xml_invalid_title_characters(method: str) -> None:
+    route = RouteParams(
+        resolution_method=method,  # type: ignore[arg-type]
+        title="Evil\x01\x1b[2J route \ud800<&>",
+        geometry_points=[(50.0, 14.0, 200.0)],
+    )
+
+    gpx = build_local_gpx(route)
+
+    assert b"<name>Evil[2J route &lt;&amp;&gt;</name>" in gpx
+    assert b"\x01" not in gpx and b"\x1b" not in gpx
