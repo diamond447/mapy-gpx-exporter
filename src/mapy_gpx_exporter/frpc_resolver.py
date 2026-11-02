@@ -22,6 +22,10 @@ def _require_pyfrpc() -> typing.Any:
 def _prepare_dim_request(location: str, dim_id: str) -> tuple[str, dict[str, str], bytes]:
     if len(dim_id) != 24:
         raise ShortLinkResolutionError(f"dim_id must be exactly 24 characters, got {len(dim_id)}")
+    # The FRPC payload below hard-codes a 24-byte string length, so non-ASCII
+    # (multi-byte) or non-alphanumeric ids would corrupt the binary request.
+    if not (dim_id.isascii() and dim_id.isalnum()):
+        raise ShortLinkResolutionError("dim_id must contain only ASCII letters and digits")
 
     url = "https://mapy.com/api/mapybox-ng/"
     headers = {

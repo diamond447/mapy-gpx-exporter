@@ -59,6 +59,19 @@ def test_resolve_dim_link_invalid_dim_length() -> None:
             resolve_dim_link(client, "https://mapy.com/invalid", "123")
 
 
+@pytest.mark.parametrize(
+    "dim_id", ["\u00e9" * 24, "12345678901234567890123/", "1234567890123456789012 4"]
+)
+def test_resolve_dim_link_rejects_non_ascii_alnum_dim(dim_id: str) -> None:
+    # A multi-byte dim_id would desynchronise the hard-coded FRPC length byte.
+    with respx.mock(assert_all_called=False) as router:
+        route = router.post("https://mapy.com/api/mapybox-ng/")
+        with httpx.Client() as client:
+            with pytest.raises(ShortLinkResolutionError, match="ASCII letters and digits"):
+                resolve_dim_link(client, "https://mapy.com/invalid", dim_id)
+        assert not route.called
+
+
 @respx.mock
 def test_resolve_dim_link_missing_pyfrpc_does_not_make_request(
     monkeypatch: pytest.MonkeyPatch,
