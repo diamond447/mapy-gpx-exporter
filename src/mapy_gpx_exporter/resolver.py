@@ -22,8 +22,15 @@ _MAPY_BASE_HOSTS = {"mapy.com", "mapy.cz"}
 
 
 def _validate_mapy_url(location: str) -> None:
-    parsed = urlparse(location)
-    hostname = (parsed.hostname or "").lower().rstrip(".")
+    try:
+        parsed = urlparse(location)
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+    except ValueError as exc:
+        # urllib rejects malformed netlocs (e.g. bad IPv6 brackets or
+        # NFKC-normalising characters) with ValueError; keep the domain error.
+        raise ShortLinkResolutionError(
+            f"Only HTTPS Mapy.com/Mapy.cz URLs are supported: {location}"
+        ) from exc
     host_parts = hostname.split(".")
     is_base_host = hostname in _MAPY_BASE_HOSTS
     is_localized_host = (
