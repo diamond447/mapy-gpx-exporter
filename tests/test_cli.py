@@ -313,3 +313,26 @@ def test_batch_dim_url_reports_missing_pyfrpc_without_traceback(
     assert 'pip install "mapy-gpx-exporter[frpc]"' in result.stdout
     assert "0 succeeded, 1 failed out of 1" in result.stdout
     assert "Traceback" not in result.stdout
+
+
+def test_batch_failure_output_does_not_interpret_markup_in_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    urls = ["https://mapy.com/s/bad?[/bold]", "https://mapy.com/s/good"]
+    links_file = tmp_path / "links.txt"
+    links_file.write_text("\n".join(urls) + "\n")
+    out_dir = tmp_path / "gpx"
+    responses = [(urls[0], GpxExportError("boom [/]")), (urls[1], b"saved")]
+    monkeypatch.setattr(
+        cli,
+        "AsyncMapyGpxClient",
+        lambda max_concurrent: StubAsyncMapyGpxClient(responses, max_concurrent),
+    )
+
+    result = runner.invoke(cli.app, ["batch", str(links_file), "--out-dir", str(out_dir)])
+
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "[/bold]" in result.stdout
+    assert (out_dir / "good.gpx").read_bytes() == b"saved"
+    assert "1 succeeded, 1 failed out of 2." in result.stdout
