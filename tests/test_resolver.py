@@ -102,6 +102,37 @@ def test_parse_route_from_location_rejects_lookalike_host() -> None:
         parse_route_from_location("https://mapy.com.example.org/en/turisticka?rc=abc")
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://[::1]\\@mapy.com/s/x",
+        "https://mapy.com\u2100@evil.com/s/x",
+        "https://mapy.com\uff03@evil.com/s/x",
+    ],
+)
+def test_validate_rejects_malformed_netloc_with_domain_error(url: str) -> None:
+    with pytest.raises(ShortLinkResolutionError, match="Only HTTPS Mapy"):
+        parse_route_from_location(url)
+    with httpx.Client() as client:
+        with pytest.raises(ShortLinkResolutionError, match="Only HTTPS Mapy"):
+            resolve_short_link(client, url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://mapy.com@evil.com/s/x",
+        "https://evil.com#@mapy.com/s/x",
+        "https://evil.com?@mapy.com/s/x",
+        "https://mapy.com:443@127.0.0.1/s/x",
+        "https://mapy.com\u3002evil.com/s/x",
+    ],
+)
+def test_validate_rejects_userinfo_and_lookalike_tricks(url: str) -> None:
+    with pytest.raises(ShortLinkResolutionError, match="Only HTTPS Mapy"):
+        parse_route_from_location(url)
+
+
 def test_parse_route_from_location_rejects_unrecognized_subdomain() -> None:
     with pytest.raises(ShortLinkResolutionError, match="Only HTTPS Mapy"):
         parse_route_from_location("https://maps.mapy.com/en/turisticka?rc=abc")

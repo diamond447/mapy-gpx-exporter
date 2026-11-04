@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 
@@ -17,6 +18,19 @@ _EXPORT_URL = "https://mapy.com/api/tplannerexport"
 # exist". No other auth (cookies, User-Agent) is required for anonymous
 # public routes.
 _REQUIRED_HEADERS = {"Referer": "https://mapy.com/"}
+
+# Characters that are not allowed anywhere in an XML 1.0 document.
+_XML_INVALID_CHARS = re.compile("[^\t\n\r\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
+
+
+def _xml_safe_text(value: str) -> str:
+    """Drop characters that would make the generated GPX ill-formed.
+
+    Titles come from remote Mapy.com data (e.g. user-named saved routes), and
+    ElementTree serialises control characters verbatim, which then breaks the
+    pretty-printing re-parse with an unexpected ``ExpatError``.
+    """
+    return _XML_INVALID_CHARS.sub("", value)
 
 
 def build_export_params(
@@ -62,7 +76,7 @@ def build_local_gpx(route: RouteParams) -> bytes:
             wpt = ET.SubElement(gpx, "wpt", {"lat": str(lat), "lon": str(lon)})
             if route.title:
                 name = ET.SubElement(wpt, "name")
-                name.text = route.title
+                name.text = _xml_safe_text(route.title)
         rough_string = ET.tostring(gpx, "utf-8")
         reparsed = minidom.parseString(rough_string)
         return reparsed.toprettyxml(indent="  ", encoding="utf-8")
@@ -70,7 +84,7 @@ def build_local_gpx(route: RouteParams) -> bytes:
     trk = ET.SubElement(gpx, "trk")
     if route.title:
         name = ET.SubElement(trk, "name")
-        name.text = route.title
+        name.text = _xml_safe_text(route.title)
 
     if route.geometry_segments:
         for segment in route.geometry_segments:

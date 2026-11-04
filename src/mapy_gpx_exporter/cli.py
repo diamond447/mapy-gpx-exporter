@@ -144,14 +144,17 @@ def batch(
         if isinstance(result, Exception):
             # Escape exception text so package extras such as [frpc] remain
             # visible while the failure label retains its styling.
-            console.print(f"[red]FAILED[/red] {url}: {escape(str(result))}")
+            console.print(f"[red]FAILED[/red] {escape(url)}: {escape(str(result))}")
             failures += 1
             continue
         path = _collision_path(out_dir / _slug_from_url(url), reserved_paths)
         try:
             _write_exclusive(path, result)
         except OSError as exc:
-            console.print(f"[red]FAILED[/red] {url}: could not write {path}: {exc}")
+            console.print(
+                f"[red]FAILED[/red] {escape(url)}: "
+                f"could not write {escape(str(path))}: {escape(str(exc))}"
+            )
             failures += 1
 
     console.print(
