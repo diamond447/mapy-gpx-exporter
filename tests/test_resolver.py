@@ -200,6 +200,48 @@ def test_resolve_short_link_follows_single_redirect() -> None:
 
 
 @respx.mock
+def test_resolve_short_link_resolves_a_relative_location() -> None:
+    # mapy.cz answers some short links with a path-only Location.
+    relative = REAL_LOCATION.removeprefix("https://mapy.com")
+    respx.get("https://mapy.cz/s/12Llo").mock(
+        return_value=httpx.Response(301, headers={"location": "https://mapy.com/s/12Llo"})
+    )
+    respx.get("https://mapy.com/s/12Llo").mock(
+        return_value=httpx.Response(302, headers={"location": relative})
+    )
+
+    with httpx.Client() as client:
+        route = resolve_short_link(client, "https://mapy.cz/s/12Llo")
+
+    assert route.rc == "9mR.HxU17l9mw.Hx8m7L"
+
+
+@respx.mock
+def test_resolve_short_link_rejects_a_scheme_relative_location_off_mapy() -> None:
+    respx.get("https://mapy.com/s/evil").mock(
+        return_value=httpx.Response(302, headers={"location": "//evil.example/turisticka?rc=x"})
+    )
+
+    with httpx.Client() as client:
+        with pytest.raises(ShortLinkResolutionError, match="evil.example"):
+            resolve_short_link(client, "https://mapy.com/s/evil")
+
+
+@pytest.mark.anyio
+@respx.mock
+async def test_async_resolve_short_link_resolves_a_relative_location() -> None:
+    relative = REAL_LOCATION.removeprefix("https://mapy.com")
+    respx.get("https://mapy.com/s/relative").mock(
+        return_value=httpx.Response(301, headers={"location": relative})
+    )
+
+    async with httpx.AsyncClient() as client:
+        route = await async_resolve_short_link(client, "https://mapy.com/s/relative")
+
+    assert route.rc == "9mR.HxU17l9mw.Hx8m7L"
+
+
+@respx.mock
 def test_resolve_short_link_raises_on_non_redirect() -> None:
     respx.get("https://mapy.com/s/expired").mock(return_value=httpx.Response(404))
 

@@ -9,7 +9,7 @@ public POI endpoint; no JavaScript execution is required.
 from __future__ import annotations
 
 import json
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, urljoin, urlparse
 
 import httpx
 
@@ -47,6 +47,20 @@ def _validate_mapy_url(location: str) -> None:
 
 def _query_value(pairs: list[tuple[str, str]], key: str) -> str | None:
     return next((value for name, value in pairs if name == key), None)
+
+
+def _redirect_target(requested_url: str, response: httpx.Response) -> str | None:
+    """The redirect's Location as an absolute, validated Mapy URL.
+
+    Mapy.com answers some short links with a relative Location
+    (``/en/turisticka?...``); it is resolved against the URL that was requested.
+    """
+    header = response.headers.get("location")
+    if not header:
+        return None
+    location = urljoin(requested_url, str(header))
+    _validate_mapy_url(location)
+    return location
 
 
 def _is_map_place_url(location: str) -> bool:
@@ -170,9 +184,7 @@ def resolve_short_link(client: httpx.Client, short_url: str, lang: str = "en") -
             f"Expected a redirect from {short_url}, got HTTP {response.status_code}"
         )
 
-    location = response.headers.get("location")
-    if location:
-        _validate_mapy_url(location)
+    location = _redirect_target(short_url, response)
 
     # Follow redirects until we get the actual route parameters or hit a max limit
     redirects = 0
@@ -187,9 +199,7 @@ def resolve_short_link(client: httpx.Client, short_url: str, lang: str = "en") -
                 f"Expected a redirect while following {location}, got HTTP {response.status_code}"
             )
 
-        location = response.headers.get("location")
-        if location:
-            _validate_mapy_url(location)
+        location = _redirect_target(location, response)
         redirects += 1
 
     if not location:
@@ -242,9 +252,7 @@ async def async_resolve_short_link(
             f"Expected a redirect from {short_url}, got HTTP {response.status_code}"
         )
 
-    location = response.headers.get("location")
-    if location:
-        _validate_mapy_url(location)
+    location = _redirect_target(short_url, response)
 
     redirects = 0
     while location and not _is_route_target(location) and redirects < 5:
@@ -258,9 +266,7 @@ async def async_resolve_short_link(
                 f"Expected a redirect while following {location}, got HTTP {response.status_code}"
             )
 
-        location = response.headers.get("location")
-        if location:
-            _validate_mapy_url(location)
+        location = _redirect_target(location, response)
         redirects += 1
 
     if not location:
